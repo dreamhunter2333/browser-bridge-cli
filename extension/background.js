@@ -11,7 +11,7 @@ const pendingBodies = new Map();
 
 // --- State ---
 
-let enabled = true;
+let enabled = false;
 let whitelistEnabled = false;
 let whitelist = [];
 let pairingToken = null;
@@ -25,7 +25,7 @@ let stateLoaded = false;
 
 const stateReady = new Promise((resolve) => {
   chrome.storage.local.get(['enabled', 'whitelistEnabled', 'whitelist', 'pairingToken', 'clientName', 'wsUrl', 'idleTimeout', 'maxFailures'], (state) => {
-    enabled = state.enabled !== false;
+    enabled = state.enabled === true;
     whitelistEnabled = state.whitelistEnabled === true;
     whitelist = state.whitelist || [];
     pairingToken = state.pairingToken || null;
@@ -278,6 +278,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       pairingToken = null;
       clientName = null;
       wsUrl = DEFAULT_WS_URL;
+      chrome.storage.local.set({ enabled: false });
       chrome.storage.local.remove(['pairingToken', 'clientName', 'wsUrl']);
       disconnect();
       sendResponse({ ok: true });

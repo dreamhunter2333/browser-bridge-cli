@@ -43,7 +43,7 @@ async function loadState() {
     'enabled', 'whitelistEnabled', 'whitelist', 'pairingToken', 'wsUrl', 'clientName',
     'idleTimeout', 'maxFailures',
   ]);
-  enabledToggle.checked = state.enabled !== false;
+  enabledToggle.checked = state.enabled === true;
   whitelistToggle.checked = state.whitelistEnabled === true;
   whitelist = state.whitelist || [];
   if (state.wsUrl) urlInput2.value = state.wsUrl;
