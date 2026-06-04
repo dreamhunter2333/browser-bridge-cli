@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { width: 360px; font-family: 'Inter', sans-serif; font-size: 13px; color: #212121; background: #f5f9ff; }
+
+/* App Bar */
+.app-bar { padding: 16px 20px; background: #1976d2; color: #fff; display: flex; align-items: center; justify-content: space-between; }
+.app-bar h3 { font-size: 16px; font-weight: 600; letter-spacing: 0.15px; }
+.app-bar .version { font-size: 11px; opacity: 0.7; background: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 12px; }
+
+/* Cards */
+.card { margin: 12px 16px; padding: 16px; background: #ffffff; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.1); }
+
+/* Status */
+.status-row { display: flex; align-items: center; gap: 12px; }
+.status-icon { width: 40px; height: 40px; border-radius: 20px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.status-icon.on { background: #d1fae5; color: #059669; }
+.status-icon.off { background: #f3e8ff; color: #9333ea; }
+.status-icon.warn { background: #fef3c7; color: #d97706; }
+.status-icon .material-icons-outlined { font-size: 22px; }
+.status-info { flex: 1; }
+.status-info .title { font-weight: 600; font-size: 14px; color: #212121; }
+.status-info .subtitle { font-size: 12px; color: #616161; margin-top: 2px; }
+
+/* MD3 Switch */
+.md-switch { position: relative; width: 52px; height: 32px; cursor: pointer; flex-shrink: 0; }
+.md-switch input { display: none; }
+.md-switch .track { position: absolute; inset: 0; background: #e0e0e0; border: 2px solid #9e9e9e; border-radius: 16px; transition: all 0.2s; }
+.md-switch .thumb { position: absolute; width: 16px; height: 16px; left: 8px; top: 8px; background: #9e9e9e; border-radius: 50%; transition: all 0.2s; }
+.md-switch input:checked + .track { background: #1976d2; border-color: #1976d2; }
+.md-switch input:checked + .track .thumb { left: 28px; background: #fff; width: 24px; height: 24px; top: 2px; }
+
+/* Section */
+.section-header { display: flex; align-items: center; justify-content: space-between; }
+.section-label { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: #616161; }
+.section-label .material-icons-outlined { font-size: 18px; color: #1976d2; }
+
+.divider { height: 1px; background: #e0e0e0; margin: 12px 0; }
+
+/* Pairing */
+.pair-section { margin-top: 12px; }
+.pair-hint { font-size: 12px; color: #616161; text-align: center; margin-bottom: 10px; }
+
+.md-input { width: 100%; padding: 10px 14px; border: 1px solid #9e9e9e; border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif; outline: none; background: transparent; transition: border 0.2s; margin-bottom: 8px; }
+.md-input:focus { border-color: #1976d2; border-width: 2px; padding: 9px 13px; }
+
+.code-boxes { display: flex; gap: 6px; justify-content: center; margin-bottom: 10px; }
+.code-boxes input { width: 38px; height: 44px; text-align: center; font-size: 20px; font-weight: 600; font-family: 'Inter', monospace; border: 1px solid #9e9e9e; border-radius: 8px; outline: none; background: transparent; transition: all 0.2s; }
+.code-boxes input:focus { border-color: #1976d2; border-width: 2px; box-shadow: 0 0 0 3px rgba(103,80,164,0.12); }
+.code-boxes input.filled { border-color: #1976d2; background: #e3f2fd; }
+
+.md-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 24px; border: none; border-radius: 20px; font-size: 14px; font-weight: 500; font-family: 'Inter', sans-serif; cursor: pointer; letter-spacing: 0.1px; transition: all 0.2s; }
+.md-btn.filled { background: #1976d2; color: #fff; }
+.md-btn.filled:hover { box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+.md-btn.filled:disabled { background: #e0e0e0; color: #616161; box-shadow: none; cursor: default; }
+.md-btn.outlined { background: transparent; color: #1976d2; border: 1px solid #9e9e9e; }
+.md-btn.outlined:hover { background: rgba(103,80,164,0.08); }
+.md-btn.text { background: transparent; color: #b3261e; padding: 8px 12px; }
+.md-btn.text:hover { background: rgba(179,38,30,0.08); }
+.btn-row { text-align: center; }
+
+.paired-row { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding: 10px 14px; background: #e3f2fd; border-radius: 8px; }
+.paired-badge { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: #1976d2; }
+.paired-badge .material-icons-outlined { font-size: 18px; }
+
+.pair-error { color: #b3261e; font-size: 12px; margin-top: 4px; text-align: center; display: none; }
+
+/* Whitelist */
+.list { max-height: 140px; overflow-y: auto; margin-top: 8px; }
+.item { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #e3f2fd; border-radius: 8px; margin-bottom: 4px; font-size: 12px; font-family: 'JetBrains Mono', 'Cascadia Code', monospace; }
+.item .remove-btn { border: none; background: none; color: #b3261e; cursor: pointer; font-size: 18px; padding: 0 4px; line-height: 1; opacity: 0.6; display: flex; align-items: center; }
+.item .remove-btn:hover { opacity: 1; }
+.item .remove-btn .material-icons-outlined { font-size: 18px; }
+
+.add-row { display: flex; gap: 8px; margin-top: 8px; }
+.add-row input { flex: 1; padding: 8px 12px; border: 1px solid #9e9e9e; border-radius: 8px; font-size: 12px; outline: none; background: transparent; font-family: 'Inter', sans-serif; transition: border 0.2s; }
+.add-row input:focus { border-color: #1976d2; border-width: 2px; padding: 7px 11px; }
+.add-row button { padding: 8px 16px; border: none; background: #1976d2; color: #fff; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 500; }
+.add-row button:hover { box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+
+.empty { color: #9e9e9e; font-size: 12px; padding: 16px 0; text-align: center; }
+
+.whitelist-body { overflow: hidden; transition: max-height 0.3s ease; }
+.whitelist-body.collapsed { max-height: 0 !important; }
+
+/* Settings */
+.settings-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
+.settings-label { font-size: 12px; color: #616161; }
+.settings-value { width: 80px; padding: 6px 10px; border: 1px solid #9e9e9e; border-radius: 8px; font-size: 12px; text-align: right; outline: none; background: transparent; font-family: 'Inter', sans-serif; }
+.settings-value:focus { border-color: #1976d2; }
+</style>
+</head>
+<body>
+  <div class="app-bar">
+    <h3>Browser Bridge</h3>
+    <span class="version">v0.1.0</span>
+  </div>
+
+  <!-- Connection -->
+  <div class="card">
+    <div class="status-row">
+      <div id="statusIcon" class="status-icon off">
+        <span class="material-icons-outlined">link_off</span>
+      </div>
+      <div class="status-info">
+        <div id="statusMain" class="title">Disconnected</div>
+        <div id="statusSub" class="subtitle">Click switch to enable</div>
+      </div>
+      <label class="md-switch">
+        <input type="checkbox" id="enabledToggle">
+        <span class="track"><span class="thumb"></span></span>
+      </label>
+    </div>
+
+    <div class="pair-section">
+      <div id="pairUI" style="display:none">
+        <div class="divider"></div>
+        <div class="pair-hint">Connect to bridge server</div>
+        <input id="urlInput2" type="text" class="md-input" placeholder="ws://127.0.0.1:52853/ext">
+        <input id="nameInput" type="text" class="md-input" placeholder="Client name">
+        <div class="code-boxes" id="codeBoxes">
+          <input type="text" maxlength="1" inputmode="numeric" data-idx="0">
+          <input type="text" maxlength="1" inputmode="numeric" data-idx="1">
+          <input type="text" maxlength="1" inputmode="numeric" data-idx="2">
+          <input type="text" maxlength="1" inputmode="numeric" data-idx="3">
+          <input type="text" maxlength="1" inputmode="numeric" data-idx="4">
+          <input type="text" maxlength="1" inputmode="numeric" data-idx="5">
+        </div>
+        <div class="btn-row">
+          <button id="pairBtn" class="md-btn filled" disabled>
+            <span class="material-icons-outlined" style="font-size:18px">link</span>
+            Pair
+          </button>
+        </div>
+      </div>
+      <div id="pairedUI" style="display:none">
+        <div class="paired-row">
+          <span class="paired-badge">
+            <span class="material-icons-outlined">check_circle</span>
+            Paired
+          </span>
+          <button class="md-btn text" id="unpairBtn">Unpair</button>
+        </div>
+      </div>
+      <div id="pairError" class="pair-error"></div>
+    </div>
+  </div>
+
+  <!-- Whitelist -->
+  <div class="card">
+    <div class="section-header">
+      <span class="section-label">
+        <span class="material-icons-outlined">shield</span>
+        URL Whitelist
+      </span>
+      <label class="md-switch">
+        <input type="checkbox" id="whitelistToggle">
+        <span class="track"><span class="thumb"></span></span>
+      </label>
+    </div>
+    <div id="whitelistBody" class="whitelist-body collapsed">
+      <div class="divider"></div>
+      <div id="list" class="list"></div>
+      <div class="add-row">
+        <input id="urlInput" type="text" placeholder="*.example.com">
+        <button id="addBtn">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div class="card">
+    <div class="section-header" style="margin-bottom:8px">
+      <span class="section-label">
+        <span class="material-icons-outlined">settings</span>
+        Auto Shutdown
+      </span>
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">Idle timeout (hours)</span>
+      <input type="number" id="idleHours" class="settings-value" value="24" min="1" max="720">
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">Max consecutive failures</span>
+      <input type="number" id="maxFails" class="settings-value" value="10" min="1" max="100">
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

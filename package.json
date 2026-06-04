@@ -1,0 +1,20 @@
+{
+  "name": "browser-bridge",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Control Chrome browser via CLI through a browser extension",
+  "workspaces": ["bridge", "cli"],
+  "scripts": {
+    "start": "bun bridge/src/server.ts || npx tsx bridge/src/server.ts",
+    "start:bun": "bun bridge/src/server.ts",
+    "start:node": "npx tsx bridge/src/server.ts",
+    "cli": "bun cli/src/index.ts || npx tsx cli/src/index.ts",
+    "cli:bun": "bun cli/src/index.ts",
+    "cli:node": "npx tsx cli/src/index.ts",
+    "test": "bun test tests/e2e.test.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "playwright": "^1.60.0"
+  }
+}
