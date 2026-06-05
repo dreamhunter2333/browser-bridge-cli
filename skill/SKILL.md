@@ -22,16 +22,8 @@ CLI --HTTP+token--> Bridge Server (:52853) --WebSocket--> Extension (service wor
 ## Setup (one-time)
 
 ```bash
-# Install globally
-npm i -g browser-bridge-cli
-
-# Or use npx (no install)
 npx browser-bridge-cli server start
-
-# Start server + generate pairing code
-browser-bridge server start
-browser-bridge pair
-
+npx browser-bridge-cli pair
 # User enters 6-digit code in extension popup
 ```
 
@@ -39,78 +31,78 @@ browser-bridge pair
 
 ```bash
 # Server management
-browser-bridge server start [--host 0.0.0.0] [--port 9000] [--token xxx]
-browser-bridge server stop
-browser-bridge server status
-browser-bridge server gen-pair
+npx browser-bridge-cli server start [--host 0.0.0.0] [--port 9000] [--token xxx]
+npx browser-bridge-cli server stop
+npx browser-bridge-cli server status
+npx browser-bridge-cli server gen-pair
 
 # Server status
-browser-bridge info
+npx browser-bridge-cli info
 
 # List tabs
-browser-bridge tabs
+npx browser-bridge-cli tabs
 
 # Execute JS in a tab
-browser-bridge eval "document.title" -t <tab-id>
+npx browser-bridge-cli eval "document.title" -t <tab-id>
 
 # Query DOM
-browser-bridge query "h1" -t <tab-id>
+npx browser-bridge-cli query "h1" -t <tab-id>
 
 # Execute JS file
-browser-bridge eval-file script.js -t <tab-id>
+npx browser-bridge-cli eval-file script.js -t <tab-id>
 
 # Create new tab
-browser-bridge new-tab "https://example.com"
+npx browser-bridge-cli new-tab "https://example.com"
 
 # Navigate
-browser-bridge navigate "https://example.com" -t <tab-id>
+npx browser-bridge-cli navigate "https://example.com" -t <tab-id>
 
 # Screenshot
-browser-bridge screenshot -o page.png -t <tab-id>
-browser-bridge screenshot -f -o full.png -t <tab-id>
+npx browser-bridge-cli screenshot -o page.png -t <tab-id>
+npx browser-bridge-cli screenshot -f -o full.png -t <tab-id>
 
 # PDF export
-browser-bridge pdf -o page.pdf -t <tab-id>
+npx browser-bridge-cli pdf -o page.pdf -t <tab-id>
 
 # Network log
-browser-bridge network -l 10
+npx browser-bridge-cli network -l 10
 
 # Cookies
-browser-bridge cookies -d example.com
+npx browser-bridge-cli cookies -d example.com
 
 # Raw CDP command
-browser-bridge cdp "Input.dispatchMouseEvent" '{"type":"mousePressed","x":100,"y":200,"button":"left","clickCount":1}' -t <tab-id>
+npx browser-bridge-cli cdp "Input.dispatchMouseEvent" '{"type":"mousePressed","x":100,"y":200,"button":"left","clickCount":1}' -t <tab-id>
 
 # Close tab
-browser-bridge close-tab <tab-id>
+npx browser-bridge-cli close-tab <tab-id>
 
 # Manage clients
-browser-bridge clients
-browser-bridge switch <clientId>
+npx browser-bridge-cli clients
+npx browser-bridge-cli switch <clientId>
 
 # Pairing
-browser-bridge pair
-browser-bridge unpair
+npx browser-bridge-cli pair
+npx browser-bridge-cli unpair
 
 # Configuration
-browser-bridge config get
-browser-bridge config set server http://remote:52853
-browser-bridge config reset
+npx browser-bridge-cli config get
+npx browser-bridge-cli config set server http://remote:52853
+npx browser-bridge-cli config reset
 
 # Daemon (Linux)
-browser-bridge server install-service --host 0.0.0.0 --token xxx
-browser-bridge server install-service --uninstall
+npx browser-bridge-cli server install-service --host 0.0.0.0 --token xxx
+npx browser-bridge-cli server install-service --uninstall
 ```
 
 ### CDP Examples
 
 | Task | Command |
 |------|---------|
-| Click | `cdp "Input.dispatchMouseEvent" '{"type":"mousePressed","x":100,"y":200,"button":"left","clickCount":1}'` |
-| Type | `cdp "Input.insertText" '{"text":"hello"}'` |
-| Key | `cdp "Input.dispatchKeyEvent" '{"type":"keyDown","key":"Enter"}'` |
-| DOM | `cdp "DOM.getDocument"` |
-| Mobile | `cdp "Emulation.setDeviceMetricsOverride" '{"width":375,"height":812,"deviceScaleFactor":3,"mobile":true}'` |
+| Click | `npx browser-bridge-cli cdp "Input.dispatchMouseEvent" '{"type":"mousePressed","x":100,"y":200,"button":"left","clickCount":1}'` |
+| Type | `npx browser-bridge-cli cdp "Input.insertText" '{"text":"hello"}'` |
+| Key | `npx browser-bridge-cli cdp "Input.dispatchKeyEvent" '{"type":"keyDown","key":"Enter"}'` |
+| DOM | `npx browser-bridge-cli cdp "DOM.getDocument"` |
+| Mobile | `npx browser-bridge-cli cdp "Emulation.setDeviceMetricsOverride" '{"width":375,"height":812,"deviceScaleFactor":3,"mobile":true}'` |
 
 ## Workflow
 
