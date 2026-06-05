@@ -1,5 +1,7 @@
 # Browser Bridge CLI
 
+[English](./README.md) | [中文](./README_CN.md)
+
 Control an already-open Chrome/Edge browser via CLI through a browser extension.
 
 ```mermaid
@@ -55,9 +57,15 @@ Download the extension zip from [GitHub Releases](https://github.com/dreamhunter
 ### 2. Start server + pair
 
 ```bash
+# 1. Start server
 npx browser-bridge-cli server start
-npx browser-bridge-cli pair
-# Enter 6-digit code in extension popup
+
+# 2. Open extension popup → enable toggle → (optional: set server URL)
+
+# 3. Generate pairing code
+npx browser-bridge-cli server gen-pair
+
+# 4. Enter the 6-digit code in extension popup → click Pair
 ```
 
 ## CLI Commands

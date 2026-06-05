@@ -22,9 +22,15 @@ CLI --HTTP+token--> Bridge Server (:52853) --WebSocket--> Extension (service wor
 ## Setup (one-time)
 
 ```bash
+# 1. Start server
 npx browser-bridge-cli server start
-npx browser-bridge-cli pair
-# User enters 6-digit code in extension popup
+
+# 2. Open extension popup → enable toggle
+
+# 3. Generate pairing code
+npx browser-bridge-cli server gen-pair
+
+# 4. Enter the 6-digit code in extension popup → click Pair
 ```
 
 ## Usage
