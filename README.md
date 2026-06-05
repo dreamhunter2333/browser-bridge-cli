@@ -46,9 +46,11 @@ npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code -g
 
 ### 1. Load browser extension
 
+Download the extension zip from [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases), or use the `extension/` directory from the source code.
+
 1. Open Chrome/Edge → `chrome://extensions`
 2. Enable **Developer mode**
-3. Click **Load unpacked** → select `extension/` directory
+3. Click **Load unpacked** → select the unzipped extension directory
 
 ### 2. Start server + pair
 
