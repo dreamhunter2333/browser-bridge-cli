@@ -41,7 +41,7 @@ if (args['gen-pair']) {
     process.exit(1);
   }
   try {
-    const res = await fetch(`http://${host.includes(':') ? `[${host}]` : host}:${port}/api/execute`, {
+    const res = await fetch(`http://${host}:${port}/api/execute`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Browser-Bridge': token },
       body: JSON.stringify({ action: 'pair.request' }),
@@ -114,9 +114,15 @@ function validatePairingCode(code: string): boolean {
   return false;
 }
 
-// Write state
+// Write state + PID
 fs.writeFileSync(stateFile, JSON.stringify({ serverToken, host: HOST, port: PORT }, null, 2));
 fs.writeFileSync(path.join(stateDir, 'token'), serverToken);
+const pidFile = path.join(stateDir, 'server.pid');
+fs.writeFileSync(pidFile, String(process.pid));
+function cleanupPid() { try { fs.unlinkSync(pidFile); } catch {} }
+process.on('exit', cleanupPid);
+process.on('SIGTERM', () => { cleanupPid(); process.exit(0); });
+process.on('SIGINT', () => { cleanupPid(); process.exit(0); });
 
 // --- Multi-client ---
 

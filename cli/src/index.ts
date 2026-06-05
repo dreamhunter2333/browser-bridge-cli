@@ -1,7 +1,10 @@
 import { program } from 'commander';
-import { request, health, ensureServer, getBridgeUrl, setGlobalOpts, resolveConfig, pairWithServer, saveConfig, loadConfigFile, resetConfig, isLocalServer } from './client.js';
+import { request, health, ensureServer, getBridgeUrl, setGlobalOpts, resolveConfig, pairWithServer, saveConfig, loadConfigFile, resetConfig, isLocalServer, STATE_DIR, detectRuntime } from './client.js';
+import { spawn, execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
 import * as readline from 'node:readline';
 
 function out(data: unknown) {
@@ -300,6 +303,154 @@ program
     await request('client.switch', { clientId });
     console.log(`Switched to client ${clientId}`);
   });
+
+// --- server management ---
+
+const pidFile = path.join(STATE_DIR, 'server.pid');
+const serverScript = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'bridge', 'src', 'server.ts');
+
+function readPid(): number | null {
+  try {
+    const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
+    if (!pid) return null;
+    process.kill(pid, 0);
+    const cmdline = execSync(`ps -p ${pid} -o args=`, { encoding: 'utf-8' }).trim();
+    if (!cmdline.includes('server.ts')) return null;
+    return pid;
+  } catch {
+    return null;
+  }
+}
+
+program
+  .command('start')
+  .description('Start bridge server in background')
+  .option('--host <host>', 'Bind host', '127.0.0.1')
+  .option('-p, --port <port>', 'Bind port', '52853')
+  .option('--token <token>', 'Fixed server token')
+  .action(async (opts) => {
+    const existing = readPid();
+    if (existing) {
+      console.log(`Server already running (PID ${existing})`);
+      return;
+    }
+    try {
+      const probe = await fetch(`http://${opts.host}:${opts.port}/api/health`);
+      if (probe.ok) {
+        console.error(`Port ${opts.port} already in use by another process.`);
+        process.exit(1);
+      }
+    } catch {}
+    const rt = detectRuntime();
+    const args = [...rt.args, serverScript, '--host', opts.host, '--port', opts.port];
+    if (opts.token) args.push('--token', opts.token);
+    const child = spawn(rt.cmd, args, { detached: true, stdio: 'ignore' });
+    child.unref();
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 300));
+      const pid = readPid();
+      if (pid) {
+        console.log(`Server started (PID ${pid})`);
+        console.log(`Listening on http://${opts.host}:${opts.port}`);
+        return;
+      }
+    }
+    console.error('Failed to start server');
+    process.exit(1);
+  });
+
+program
+  .command('stop')
+  .description('Stop bridge server')
+  .action(() => {
+    const pid = readPid();
+    if (!pid) {
+      console.log('Server is not running.');
+      return;
+    }
+    process.kill(pid, 'SIGTERM');
+    console.log(`Server stopped (PID ${pid})`);
+  });
+
+program
+  .command('status')
+  .description('Check if bridge server is running')
+  .action(async () => {
+    const pid = readPid();
+    if (!pid) {
+      console.log('Server is not running.');
+      return;
+    }
+    const config = resolveConfig(program.opts());
+    const isHealthy = await health();
+    console.log(`Server running (PID ${pid})`);
+    console.log(`URL: ${config.url}`);
+    console.log(`Health: ${isHealthy ? 'ok' : 'unreachable'}`);
+  });
+
+program
+  .command('install-service')
+  .description('Install as systemd user service (Linux)')
+  .option('--host <host>', 'Bind host', '127.0.0.1')
+  .option('-p, --port <port>', 'Bind port', '52853')
+  .option('--token <token>', 'Fixed server token')
+  .option('--uninstall', 'Remove the service')
+  .action(async (opts) => {
+    if (process.platform !== 'linux') {
+      console.error('install-service is only supported on Linux (systemd).');
+      process.exit(1);
+    }
+    const serviceDir = path.join(os.homedir(), '.config', 'systemd', 'user');
+    const serviceFile = path.join(serviceDir, 'browser-bridge.service');
+
+    if (opts.uninstall) {
+      try { await run('systemctl', ['--user', 'stop', 'browser-bridge']); } catch {}
+      try { await run('systemctl', ['--user', 'disable', 'browser-bridge']); } catch {}
+      try { fs.unlinkSync(serviceFile); } catch {}
+      try { await run('systemctl', ['--user', 'daemon-reload']); } catch {}
+      console.log('Service uninstalled.');
+      return;
+    }
+
+    const rt2 = detectRuntime();
+    const execArgs = [rt2.cmd, ...rt2.args, serverScript, '--host', opts.host, '--port', opts.port];
+    if (opts.token) execArgs.push('--token', opts.token);
+    const escapedExecStart = execArgs.map(a => a.includes(' ') ? `"${a}"` : a).join(' ');
+    const escapedHome = os.homedir().includes(' ') ? `"${os.homedir()}"` : os.homedir();
+
+    const unit = `[Unit]
+Description=Browser Bridge Server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=${escapedExecStart}
+Restart=on-failure
+RestartSec=5
+Environment=HOME=${escapedHome}
+
+[Install]
+WantedBy=default.target
+`;
+
+    fs.mkdirSync(serviceDir, { recursive: true });
+    fs.writeFileSync(serviceFile, unit);
+
+    await run('systemctl', ['--user', 'daemon-reload']);
+    await run('systemctl', ['--user', 'enable', '--now', 'browser-bridge']);
+
+    console.log('Service installed and started.');
+    console.log(`  Config: ${serviceFile}`);
+    console.log(`  Status: systemctl --user status browser-bridge`);
+    console.log(`  Logs:   journalctl --user -u browser-bridge -f`);
+  });
+
+function run(cmd: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const p = spawn(cmd, args, { stdio: 'inherit' });
+    p.on('close', code => code === 0 ? resolve() : reject(new Error(`${cmd} exited ${code}`)));
+  });
+}
 
 // --- config subcommand ---
 

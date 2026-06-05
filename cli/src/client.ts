@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 
-const STATE_DIR = path.join(os.homedir(), '.browser-bridge');
+export const STATE_DIR = path.join(os.homedir(), '.browser-bridge');
 const STATE_FILE = path.join(STATE_DIR, 'state.json');
 const TOKEN_FILE = path.join(STATE_DIR, 'token');
 const CONFIG_FILE = path.join(STATE_DIR, 'config.json');
@@ -37,16 +37,19 @@ export function resetConfig() {
   try { fs.unlinkSync(CONFIG_FILE); } catch {}
 }
 
+const DEFAULT_HOST = '127.0.0.1';
+const DEFAULT_PORT = 52853;
+
 function readState(): { token: string; host: string; port: number } {
   try {
     const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
-    return { token: state.serverToken || state.pairingToken, host: state.host || '127.0.0.1', port: state.port || 52853 };
+    return { token: state.serverToken || state.pairingToken, host: state.host || DEFAULT_HOST, port: state.port || DEFAULT_PORT };
   } catch {
     try {
       const token = fs.readFileSync(TOKEN_FILE, 'utf-8').trim();
-      return { token, host: '127.0.0.1', port: 52853 };
+      return { token, host: DEFAULT_HOST, port: DEFAULT_PORT };
     } catch {
-      throw new Error(`No state found at ${STATE_DIR}. Start bridge server first.`);
+      return { token: '', host: DEFAULT_HOST, port: DEFAULT_PORT };
     }
   }
 }
@@ -55,7 +58,7 @@ export function isLocalServer(url: string): boolean {
   try {
     const u = new URL(url);
     const host = u.hostname;
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+    return host === 'localhost' || host === '127.0.0.1';
   } catch {
     return false;
   }
@@ -98,9 +101,8 @@ export function resolveConfig(opts?: { server?: string; token?: string }): Resol
   }
 
   const state = readState();
-  const host = state.host.includes(':') ? `[${state.host}]` : state.host;
   return {
-    url: `http://${host}:${state.port}`,
+    url: `http://${state.host}:${state.port}`,
     token: token || state.token,
     isLocal: true,
   };
@@ -116,7 +118,7 @@ export function getBridgeUrl(): string {
   return resolveConfig(_globalOpts).url;
 }
 
-function detectRuntime(): { cmd: string; args: string[] } {
+export function detectRuntime(): { cmd: string; args: string[] } {
   try {
     if (typeof Bun !== 'undefined') return { cmd: 'bun', args: ['run'] };
   } catch {}
@@ -141,8 +143,7 @@ export async function ensureServer(): Promise<void> {
   const spawnArgs = [...rt.args, serverPath];
   try {
     const u = new URL(config.url);
-    const host = u.hostname.replace(/^\[|\]$/g, '');
-    if (host && host !== '127.0.0.1') spawnArgs.push('--host', host);
+    if (u.hostname && u.hostname !== '127.0.0.1') spawnArgs.push('--host', u.hostname);
     if (u.port) spawnArgs.push('--port', u.port);
   } catch {}
 
