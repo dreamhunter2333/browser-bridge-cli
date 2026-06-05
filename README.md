@@ -50,16 +50,67 @@ bun install  # or: npm install
 ### 3. Start bridge server
 
 ```bash
-bun bridge/src/server.ts          # or: npx tsx bridge/src/server.ts
+# Local (default, binds to 127.0.0.1)
+bun bridge/src/server.ts
+
+# Remote / container (public access)
+bun bridge/src/server.ts --host 0.0.0.0
+bun bridge/src/server.ts --host 0.0.0.0 --port 9000 --token my-fixed-token
 ```
 
 ### 4. Pair extension
 
 ```bash
-bun cli/src/index.ts pair         # or: npx tsx cli/src/index.ts pair
+bun cli/src/index.ts pair
 ```
 
 Copy the 6-digit code, click the Browser Bridge extension icon in the toolbar, enter the code and click **Pair**.
+
+## Remote Server
+
+The bridge server can be deployed on a remote machine or container, and the CLI can connect to it from anywhere.
+
+### Deploy server
+
+```bash
+# On remote machine / container
+bun bridge/src/server.ts --host 0.0.0.0 --token my-server-token
+
+# Generate a pairing code for CLI
+bun bridge/src/server.ts --gen-pair
+```
+
+### Pair CLI with remote server
+
+```bash
+# Enter the pairing code generated on the server
+bun cli/src/index.ts pair --server http://remote-host:52853
+```
+
+The token is saved to `~/.browser-bridge/config.json`. Subsequent commands automatically use the stored config:
+
+```bash
+bun cli/src/index.ts tabs
+bun cli/src/index.ts eval "document.title"
+```
+
+### CLI configuration
+
+```bash
+# Set remote server
+bun cli/src/index.ts config set server http://remote:52853
+
+# View config (tokens are masked)
+bun cli/src/index.ts config get
+
+# Clear config (revert to local)
+bun cli/src/index.ts config reset
+
+# Remove remote credentials + revoke server token
+bun cli/src/index.ts unpair
+```
+
+Config priority: CLI flags (`--server`, `--token`) > env vars (`BROWSER_BRIDGE_URL`, `BROWSER_BRIDGE_TOKEN`) > `~/.browser-bridge/config.json` > `~/.browser-bridge/state.json`
 
 ## CLI Commands
 
@@ -70,12 +121,20 @@ bun cli/src/index.ts <command>    # Bun
 npx tsx cli/src/index.ts <command> # Node.js
 ```
 
+Global options: `-s, --server <url>` and `--token <token>` to override server connection.
+
 ```bash
 # Server
 info                          # Server status + connected clients
-pair                          # Generate pairing code
+pair [-n name]                # Pair with bridge server
+unpair                        # Remove remote credentials
 clients                       # List connected clients
 switch <clientId>             # Switch active client
+
+# Config
+config get                    # Show current config
+config set <key> <value>      # Set config (server, token, name)
+config reset                  # Clear all config
 
 # Tabs
 tabs                          # List all tabs
@@ -104,13 +163,26 @@ cdp <method> [params] [-t id] [-k]  # Any Chrome DevTools Protocol method
 detach [-t id]                      # Detach debugger
 ```
 
+## Testing
+
+```bash
+npx playwright test
+```
+
+32 e2e tests covering server API, HTTP/WS pairing, rate limiting, token revoke, privilege controls, extension interaction, CLI commands, and end-to-end flows.
 
 ## Security
 
-- Bridge binds to `127.0.0.1` by default
-- CLI authenticates via server token (`~/.browser-bridge/token`)
-- Each extension has independent client token (generated on pairing)
+- Bridge binds to `127.0.0.1` by default (use `--host 0.0.0.0` for public access)
+- Server token (`--token` or auto-generated) controls admin operations (pair code generation, token revocation)
+- Client tokens (issued via pairing) can execute browser commands but cannot generate new pair codes
+- `/api/pair` rate-limited (5 attempts/min per IP), WS pair rate-limited (5 failures per connection)
+- `/api/health` returns minimal info without auth, full client list requires auth
+- `/api/clients` requires auth
 - Pairing codes are one-time-use, expire in 5 minutes
+- Name collision check prevents token hijacking (HTTP and WS)
+- Token revoke disconnects WS clients and switches active client
+- Clients can self-revoke their own tokens; cross-client revoke requires server token
 - Whitelist restricts per-tab operations by URL pattern
 
 ## License

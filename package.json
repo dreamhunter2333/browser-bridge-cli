@@ -11,10 +11,11 @@
     "cli": "bun cli/src/index.ts || npx tsx cli/src/index.ts",
     "cli:bun": "bun cli/src/index.ts",
     "cli:node": "npx tsx cli/src/index.ts",
-    "test": "bun test tests/e2e.test.ts"
+    "test": "npx playwright test"
   },
   "devDependencies": {
-    "tsx": "^4.19.0",
-    "playwright": "^1.60.0"
+    "@playwright/test": "^1.60.0",
+    "playwright": "^1.60.0",
+    "tsx": "^4.19.0"
   }
 }

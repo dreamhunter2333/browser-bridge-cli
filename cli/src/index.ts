@@ -1,20 +1,45 @@
 import { program } from 'commander';
-import { request, health, ensureServer, getBridgeUrl } from './client.js';
+import { request, health, ensureServer, getBridgeUrl, setGlobalOpts, resolveConfig, pairWithServer, saveConfig, loadConfigFile, resetConfig, isLocalServer } from './client.js';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as readline from 'node:readline';
 
 function out(data: unknown) {
   console.log(typeof data === 'string' ? data : JSON.stringify(data, null, 2));
 }
 
-program.name('browser-bridge-cli').version('0.1.0').description('Browser Bridge CLI');
+function prompt(question: string): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+program
+  .name('browser-bridge-cli')
+  .version('0.1.0')
+  .description('Browser Bridge CLI')
+  .option('-s, --server <url>', 'Bridge server URL')
+  .option('--token <token>', 'Authentication token')
+  .hook('preAction', (thisCommand) => {
+    const opts = thisCommand.opts();
+    if (opts.server || opts.token) {
+      setGlobalOpts({ server: opts.server, token: opts.token });
+    }
+  });
 
 program
   .command('info')
   .description('Check bridge server status')
   .action(async () => {
     await ensureServer();
-    const h = await fetch(`${getBridgeUrl()}/api/health`).then(r => r.json());
+    const config = resolveConfig(program.opts());
+    const h = await fetch(`${config.url}/api/health`, {
+      headers: config.token ? { 'X-Browser-Bridge': config.token } : {},
+    }).then(r => r.json());
     out(h);
   });
 
@@ -195,12 +220,49 @@ program
 
 program
   .command('pair')
-  .description('Generate a pairing code for a new extension')
-  .action(async () => {
+  .description('Pair with bridge server')
+  .option('-n, --name <name>', 'Client name')
+  .action(async (opts) => {
+    const parentOpts = program.opts();
+    const serverUrl = parentOpts.server || process.env.BROWSER_BRIDGE_URL || loadConfigFile().server;
+
+    if (serverUrl && !isLocalServer(serverUrl)) {
+      const code = await prompt('Enter pairing code: ');
+      if (!code || code.length !== 6) {
+        console.error('Invalid code. Must be 6 digits.');
+        process.exit(1);
+      }
+      const result = await pairWithServer(serverUrl, code, opts.name);
+      saveConfig({ server: serverUrl, token: result.token, name: result.name });
+      console.log(`Paired as "${result.name}". Config saved.`);
+      return;
+    }
+
     const result = await request('pair.request') as { code: string };
     console.log(`\n  Pairing code: ${result.code}\n`);
     console.log('Enter this code in the extension popup to pair.');
     console.log('Code expires in 5 minutes.');
+  });
+
+program
+  .command('unpair')
+  .description('Remove stored remote server credentials')
+  .action(async () => {
+    const config = loadConfigFile();
+    if (!config.token && !config.server) {
+      console.log('No remote config to clear.');
+      return;
+    }
+    if (config.token && config.name) {
+      try {
+        await request('token.revoke', { name: config.name });
+        console.log('Server token revoked.');
+      } catch {
+        console.log('Could not reach server to revoke token (cleared locally only).');
+      }
+    }
+    saveConfig({ token: undefined, server: undefined, name: undefined });
+    console.log('Remote credentials cleared.');
   });
 
 program
@@ -237,6 +299,45 @@ program
   .action(async (clientId: string) => {
     await request('client.switch', { clientId });
     console.log(`Switched to client ${clientId}`);
+  });
+
+// --- config subcommand ---
+
+const configCmd = program.command('config').description('Manage CLI configuration');
+
+configCmd
+  .command('get')
+  .description('Show current configuration')
+  .action(() => {
+    const config = loadConfigFile();
+    if (Object.keys(config).length === 0) {
+      console.log('No config set. Using defaults (local server).');
+      return;
+    }
+    const masked = { ...config };
+    if (masked.token) masked.token = masked.token.slice(0, 8) + '...';
+    out(masked);
+  });
+
+configCmd
+  .command('set <key> <value>')
+  .description('Set a config value (server, token, name)')
+  .action((key: string, value: string) => {
+    if (!['server', 'token', 'name'].includes(key)) {
+      console.error(`Unknown config key: ${key}. Valid: server, token, name`);
+      process.exit(1);
+    }
+    saveConfig({ [key]: value });
+    const display = key === 'token' ? value.slice(0, 8) + '...' : value;
+    console.log(`Set ${key} = ${display}`);
+  });
+
+configCmd
+  .command('reset')
+  .description('Clear all configuration')
+  .action(() => {
+    resetConfig();
+    console.log('Config cleared.');
   });
 
 program.parseAsync().catch((err) => {

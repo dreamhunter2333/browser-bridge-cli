@@ -256,7 +256,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse({ success: false, error: 'Not connected' });
           return;
         }
-        ws.send(JSON.stringify({ type: 'pair', code: msg.code, name: msg.name }));
         const pairHandler = (event) => {
           const resp = JSON.parse(event.data);
           if (resp.type === 'pair') {
@@ -270,6 +269,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
         };
         ws.addEventListener('message', pairHandler);
+        ws.send(JSON.stringify({ type: 'pair', code: msg.code, name: msg.name }));
       };
       doPair();
       break;
@@ -542,10 +542,9 @@ async function handleAction(action, params) {
         const { data } = await cdpSend(tid, 'Page.captureScreenshot', {
           format: params.format || 'png',
         });
-        // Fix: clearDeviceMetricsOverride in finally
-        await cdpSend(tid, 'Emulation.clearDeviceMetricsOverride').catch(() => {});
         return { dataUrl: `data:image/${params.format || 'png'};base64,${data}` };
       } finally {
+        await cdpSend(tid, 'Emulation.clearDeviceMetricsOverride').catch(() => {});
         await cdpDetach(tid);
       }
     }

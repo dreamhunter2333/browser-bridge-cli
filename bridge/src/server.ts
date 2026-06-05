@@ -12,6 +12,8 @@ const { values: args } = parseArgs({
   options: {
     host: { type: 'string', default: '127.0.0.1' },
     port: { type: 'string', default: '52853' },
+    token: { type: 'string' },
+    'gen-pair': { type: 'boolean', default: false },
   },
   strict: false,
 });
@@ -24,6 +26,38 @@ const PORT = parseInt(args.port!, 10);
 const stateDir = path.join(os.homedir(), '.browser-bridge');
 fs.mkdirSync(stateDir, { recursive: true });
 
+// --- gen-pair mode: request a pairing code from a running server ---
+
+if (args['gen-pair']) {
+  const stateFile = path.join(stateDir, 'state.json');
+  let host = '127.0.0.1', port = 52853, token = '';
+  try {
+    const saved = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
+    host = saved.host || host;
+    port = saved.port || port;
+    token = saved.serverToken || '';
+  } catch {
+    console.error('No running server found. Start the server first.');
+    process.exit(1);
+  }
+  try {
+    const res = await fetch(`http://${host.includes(':') ? `[${host}]` : host}:${port}/api/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Browser-Bridge': token },
+      body: JSON.stringify({ action: 'pair.request' }),
+    });
+    const json = await res.json() as { success: boolean; data?: { code: string }; error?: string };
+    if (!json.success) throw new Error(json.error || 'Failed');
+    console.log(`\n  Pairing code: ${json.data!.code}\n`);
+    console.log('Enter this code in the CLI or extension to pair.');
+    console.log('Code expires in 5 minutes.');
+  } catch (e) {
+    console.error(`Failed to generate pairing code: ${e}`);
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
 // --- Pairing ---
 
 type PairingRequest = { code: string; expiresAt: number };
@@ -34,11 +68,15 @@ const PAIRING_TTL = 300_000; // 5 min
 const stateFile = path.join(stateDir, 'state.json');
 let serverToken: string;
 
-try {
-  const saved = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
-  serverToken = saved.serverToken || randomUUID();
-} catch {
-  serverToken = randomUUID();
+if (args.token) {
+  serverToken = args.token;
+} else {
+  try {
+    const saved = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
+    serverToken = saved.serverToken || randomUUID();
+  } catch {
+    serverToken = randomUUID();
+  }
 }
 
 // Client tokens: clientName -> token
@@ -94,11 +132,16 @@ type Client = {
 const clients = new Map<string, Client>();
 let activeClientId: string | null = null;
 
-function getActiveClient(): Client | null {
-  if (!activeClientId) return null;
-  const c = clients.get(activeClientId);
+function getReadyClient(id?: string): Client | null {
+  const targetId = id || activeClientId;
+  if (!targetId) return null;
+  const c = clients.get(targetId);
   if (c && c.ws.readyState === WebSocket.OPEN && c.paired) return c;
   return null;
+}
+
+function findBestActiveClient(): string | null {
+  return Array.from(clients.values()).find(c => c.paired && c.ws.readyState === WebSocket.OPEN)?.id || null;
 }
 
 const pendingRequests = new Map<string, {
@@ -139,6 +182,37 @@ function sendJson(res: http.ServerResponse, status: number, data: unknown) {
   res.end(body);
 }
 
+// --- Rate limiting for /api/pair ---
+
+const pairAttempts = new Map<string, { count: number; resetAt: number }>();
+const MAX_PAIR_ATTEMPTS = 5;
+const PAIR_RATE_WINDOW = 60_000;
+
+function checkPairRateLimit(ip: string): boolean {
+  const now = Date.now();
+  for (const [k, v] of pairAttempts) {
+    if (now >= v.resetAt) pairAttempts.delete(k);
+  }
+  const entry = pairAttempts.get(ip);
+  if (entry && now < entry.resetAt) {
+    if (entry.count >= MAX_PAIR_ATTEMPTS) return false;
+    entry.count++;
+    return true;
+  }
+  pairAttempts.set(ip, { count: 1, resetAt: now + PAIR_RATE_WINDOW });
+  return true;
+}
+
+function authenticateRequest(req: http.IncomingMessage): boolean {
+  const token = req.headers['x-browser-bridge'] as string;
+  if (!token) return false;
+  if (token === serverToken) return true;
+  for (const t of clientTokens.values()) {
+    if (t === token) return true;
+  }
+  return false;
+}
+
 const server = http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
@@ -150,23 +224,26 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === 'GET' && req.url === '/api/health') {
-    const clientList = Array.from(clients.values()).map(c => ({
-      id: c.id,
-      name: c.name,
-      paired: c.paired,
-      active: c.id === activeClientId,
-    }));
-    sendJson(res, 200, {
-      status: 'ok',
-      host: HOST,
-      port: PORT,
-      clients: clientList,
-      activeClient: activeClientId,
-    });
+    const base = { status: 'ok', host: HOST, port: PORT };
+    if (authenticateRequest(req)) {
+      const clientList = Array.from(clients.values()).map(c => ({
+        id: c.id,
+        name: c.name,
+        paired: c.paired,
+        active: c.id === activeClientId,
+      }));
+      sendJson(res, 200, { ...base, clients: clientList, activeClient: activeClientId });
+    } else {
+      sendJson(res, 200, base);
+    }
     return;
   }
 
   if (req.method === 'GET' && req.url === '/api/clients') {
+    if (!authenticateRequest(req)) {
+      sendJson(res, 403, { success: false, error: 'Invalid or missing token' });
+      return;
+    }
     const clientList = Array.from(clients.values()).map(c => ({
       id: c.id,
       name: c.name,
@@ -177,9 +254,41 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && req.url === '/api/pair') {
+    const clientIp = req.socket.remoteAddress || '';
+    if (!checkPairRateLimit(clientIp)) {
+      sendJson(res, 429, { success: false, error: 'Too many attempts. Try again later.' });
+      return;
+    }
+    try {
+      const raw = await parseBody(req);
+      const { code, name } = JSON.parse(raw);
+      if (!code) {
+        sendJson(res, 400, { success: false, error: 'Missing code' });
+        return;
+      }
+      const clientName = name || `cli-${randomUUID().slice(0, 6)}`;
+      if (clientTokens.has(clientName)) {
+        sendJson(res, 409, { success: false, error: `Name "${clientName}" already taken` });
+        return;
+      }
+      if (!validatePairingCode(code)) {
+        sendJson(res, 403, { success: false, error: 'Invalid or expired pairing code' });
+        return;
+      }
+      const clientToken = randomUUID();
+      clientTokens.set(clientName, clientToken);
+      saveTokens();
+      console.log(`CLI client "${clientName}" paired via HTTP`);
+      sendJson(res, 200, { success: true, token: clientToken, name: clientName });
+    } catch (err) {
+      sendJson(res, 500, { success: false, error: String(err) });
+    }
+    return;
+  }
+
   if (req.method === 'POST' && req.url === '/api/execute') {
-    const token = req.headers['x-browser-bridge'] as string;
-    if (token !== serverToken) {
+    if (!authenticateRequest(req)) {
       sendJson(res, 403, { success: false, error: 'Invalid or missing token' });
       return;
     }
@@ -193,9 +302,46 @@ const server = http.createServer(async (req, res) => {
 
       // Generate pairing code
       if (action === 'pair.request') {
+        const reqToken = req.headers['x-browser-bridge'] as string;
+        if (reqToken !== serverToken) {
+          sendJson(res, 403, { success: false, error: 'Only server token can generate pairing codes' });
+          return;
+        }
         const code = createPairingCode();
         console.log(`\n  New pairing code: ${code}\n`);
         sendJson(res, 200, { success: true, data: { code } });
+        return;
+      }
+
+      if (action === 'token.revoke') {
+        const reqToken = req.headers['x-browser-bridge'] as string;
+        const name = params?.name as string;
+        if (!name) {
+          sendJson(res, 400, { success: false, error: 'Missing name' });
+          return;
+        }
+        const isSelf = clientTokens.get(name) === reqToken;
+        if (reqToken !== serverToken && !isSelf) {
+          sendJson(res, 403, { success: false, error: 'Can only revoke own token or use server token' });
+          return;
+        }
+        clientTokens.delete(name);
+        saveTokens();
+        for (const [, c] of clients) {
+          if (c.name === name && c.paired) {
+            c.paired = false;
+            try { c.ws.send(JSON.stringify({ type: 'auth', success: false, error: 'Token revoked' })); } catch {}
+            c.ws.close(4003, 'Token revoked');
+          }
+        }
+        if (activeClientId) {
+          const active = clients.get(activeClientId);
+          if (!active || !active.paired || active.ws.readyState !== WebSocket.OPEN) {
+            activeClientId = findBestActiveClient();
+          }
+        }
+        console.log(`Token revoked for "${name}"`);
+        sendJson(res, 200, { success: true, data: { revoked: name } });
         return;
       }
 
@@ -219,14 +365,9 @@ const server = http.createServer(async (req, res) => {
       }
 
       // Route to specific client or active
-      const targetId = clientId || activeClientId;
-      const target = targetId ? clients.get(targetId) : null;
-      if (!target || target.ws.readyState !== WebSocket.OPEN) {
+      const target = getReadyClient(clientId);
+      if (!target) {
         sendJson(res, 503, { success: false, error: 'No connected client' });
-        return;
-      }
-      if (!target.paired) {
-        sendJson(res, 403, { success: false, error: 'Client not paired' });
         return;
       }
 
@@ -275,6 +416,9 @@ wss.on('connection', (ws, req) => {
     }, HEARTBEAT_INTERVAL),
   };
 
+  let wsPairFailCount = 0;
+  const MAX_WS_PAIR_FAILURES = 5;
+
   clients.set(clientId, client);
   if (!activeClientId) activeClientId = clientId;
 
@@ -299,20 +443,29 @@ wss.on('connection', (ws, req) => {
         client.paired = true;
         client.name = name;
         client.token = savedToken;
+        if (!activeClientId || !clients.get(activeClientId)?.paired || clients.get(activeClientId)?.ws.readyState !== WebSocket.OPEN) activeClientId = clientId;
         console.log(`Client ${clientId} authenticated as "${client.name}"`);
         ws.send(JSON.stringify({ type: 'auth', success: true, clientId }));
         return;
       }
 
       if (msg.type === 'pair') {
-        if (!validatePairingCode(msg.code)) {
-          ws.send(JSON.stringify({ type: 'pair', success: false, error: 'Invalid or expired pairing code' }));
+        const failures = wsPairFailCount;
+        if (failures >= MAX_WS_PAIR_FAILURES) {
+          ws.send(JSON.stringify({ type: 'pair', success: false, error: 'Too many failed attempts' }));
+          ws.close(4002, 'Rate limited');
           return;
         }
         const name = msg.name || client.name;
         const dup = Array.from(clients.values()).find(c => c.id !== clientId && c.name === name);
-        if (dup) {
+        if (dup || clientTokens.has(name)) {
+          wsPairFailCount++;
           ws.send(JSON.stringify({ type: 'pair', success: false, error: `Name "${name}" already taken` }));
+          return;
+        }
+        if (!validatePairingCode(msg.code)) {
+          wsPairFailCount++;
+          ws.send(JSON.stringify({ type: 'pair', success: false, error: 'Invalid or expired pairing code' }));
           return;
         }
         const clientToken = randomUUID();
@@ -321,6 +474,7 @@ wss.on('connection', (ws, req) => {
         client.token = clientToken;
         clientTokens.set(name, clientToken);
         saveTokens();
+        if (!activeClientId || !clients.get(activeClientId)?.paired || clients.get(activeClientId)?.ws.readyState !== WebSocket.OPEN) activeClientId = clientId;
         console.log(`Client ${clientId} paired as "${client.name}"`);
         ws.send(JSON.stringify({ type: 'pair', success: true, token: clientToken, clientId }));
         return;
@@ -349,7 +503,7 @@ wss.on('connection', (ws, req) => {
     rejectPendingForClient(clientId, 'Client disconnected');
     clients.delete(clientId);
     if (activeClientId === clientId) {
-      activeClientId = clients.keys().next().value || null;
+      activeClientId = findBestActiveClient();
       if (activeClientId) console.log(`Active client switched to ${activeClientId}`);
     }
   });

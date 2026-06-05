@@ -7,13 +7,41 @@ import * as os from 'node:os';
 const STATE_DIR = path.join(os.homedir(), '.browser-bridge');
 const STATE_FILE = path.join(STATE_DIR, 'state.json');
 const TOKEN_FILE = path.join(STATE_DIR, 'token');
+const CONFIG_FILE = path.join(STATE_DIR, 'config.json');
+
+export type Config = {
+  server?: string;
+  token?: string;
+  name?: string;
+};
+
+export function loadConfigFile(): Config {
+  try {
+    return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+export function saveConfig(partial: Partial<Config>) {
+  fs.mkdirSync(STATE_DIR, { recursive: true });
+  const existing = loadConfigFile();
+  const merged = { ...existing, ...partial };
+  for (const [k, v] of Object.entries(merged)) {
+    if (v === undefined || v === null) delete (merged as Record<string, unknown>)[k];
+  }
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2));
+}
+
+export function resetConfig() {
+  try { fs.unlinkSync(CONFIG_FILE); } catch {}
+}
 
 function readState(): { token: string; host: string; port: number } {
   try {
     const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
     return { token: state.serverToken || state.pairingToken, host: state.host || '127.0.0.1', port: state.port || 52853 };
   } catch {
-    // Fallback to token-only file
     try {
       const token = fs.readFileSync(TOKEN_FILE, 'utf-8').trim();
       return { token, host: '127.0.0.1', port: 52853 };
@@ -23,9 +51,69 @@ function readState(): { token: string; host: string; port: number } {
   }
 }
 
+export function isLocalServer(url: string): boolean {
+  try {
+    const u = new URL(url);
+    const host = u.hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+  } catch {
+    return false;
+  }
+}
+
+export type ResolvedConfig = { url: string; token: string; isLocal: boolean };
+
+function normalizeUrl(url: string): string {
+  return url.replace(/\/+$/, '');
+}
+
+export function resolveConfig(opts?: { server?: string; token?: string }): ResolvedConfig {
+  const fileConfig = loadConfigFile();
+
+  const rawUrl = opts?.server
+    || process.env.BROWSER_BRIDGE_URL
+    || fileConfig.server
+    || undefined;
+
+  const token = opts?.token
+    || process.env.BROWSER_BRIDGE_TOKEN
+    || fileConfig.token
+    || undefined;
+
+  if (rawUrl) {
+    const url = normalizeUrl(rawUrl);
+    const local = isLocalServer(url);
+    if (local && !token) {
+      try {
+        const state = readState();
+        return { url, token: state.token, isLocal: true };
+      } catch {
+        return { url, token: '', isLocal: true };
+      }
+    }
+    if (!local && !token) {
+      throw new Error(`Not authenticated for remote server ${url}.\nRun: browser-bridge-cli pair --server ${url}`);
+    }
+    return { url, token: token || '', isLocal: local };
+  }
+
+  const state = readState();
+  const host = state.host.includes(':') ? `[${state.host}]` : state.host;
+  return {
+    url: `http://${host}:${state.port}`,
+    token: token || state.token,
+    isLocal: true,
+  };
+}
+
+let _globalOpts: { server?: string; token?: string } | undefined;
+
+export function setGlobalOpts(opts: { server?: string; token?: string }) {
+  _globalOpts = opts;
+}
+
 export function getBridgeUrl(): string {
-  const { host, port } = readState();
-  return `http://${host}:${port}`;
+  return resolveConfig(_globalOpts).url;
 }
 
 function detectRuntime(): { cmd: string; args: string[] } {
@@ -36,6 +124,12 @@ function detectRuntime(): { cmd: string; args: string[] } {
 }
 
 export async function ensureServer(): Promise<void> {
+  const config = resolveConfig(_globalOpts);
+  if (!config.isLocal) {
+    if (await health()) return;
+    throw new Error(`Cannot reach remote server ${config.url}`);
+  }
+
   if (await health()) return;
 
   const serverPath = path.resolve(
@@ -44,7 +138,15 @@ export async function ensureServer(): Promise<void> {
   );
 
   const rt = detectRuntime();
-  const child = spawn(rt.cmd, [...rt.args, serverPath], {
+  const spawnArgs = [...rt.args, serverPath];
+  try {
+    const u = new URL(config.url);
+    const host = u.hostname.replace(/^\[|\]$/g, '');
+    if (host && host !== '127.0.0.1') spawnArgs.push('--host', host);
+    if (u.port) spawnArgs.push('--port', u.port);
+  } catch {}
+
+  const child = spawn(rt.cmd, spawnArgs, {
     detached: true,
     stdio: 'ignore',
   });
@@ -59,11 +161,10 @@ export async function ensureServer(): Promise<void> {
 
 export async function request(action: string, params: Record<string, unknown> = {}): Promise<unknown> {
   await ensureServer();
-  const { token } = readState();
-  const url = getBridgeUrl();
-  const res = await fetch(`${url}/api/execute`, {
+  const config = resolveConfig(_globalOpts);
+  const res = await fetch(`${config.url}/api/execute`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Browser-Bridge': token },
+    headers: { 'Content-Type': 'application/json', 'X-Browser-Bridge': config.token },
     body: JSON.stringify({ action, params }),
   });
   const json = await res.json();
@@ -75,10 +176,24 @@ export async function request(action: string, params: Record<string, unknown> = 
 
 export async function health(): Promise<boolean> {
   try {
-    const url = getBridgeUrl();
-    const res = await fetch(`${url}/api/health`);
+    const config = resolveConfig(_globalOpts);
+    const res = await fetch(`${config.url}/api/health`);
     return res.ok;
   } catch {
     return false;
   }
+}
+
+export async function pairWithServer(serverUrl: string, code: string, name?: string): Promise<{ token: string; name: string }> {
+  const url = normalizeUrl(serverUrl);
+  const res = await fetch(`${url}/api/pair`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, name }),
+  });
+  const json = await res.json();
+  if (!json.success) {
+    throw new Error(json.error || 'Pairing failed');
+  }
+  return { token: json.token, name: json.name };
 }
