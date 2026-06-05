@@ -4,7 +4,7 @@
   "description": "Control Chrome/Edge browser via CLI through a browser extension",
   "type": "module",
   "bin": {
-    "browser-bridge": "dist/cli.js"
+    "browser-bridge-cli": "dist/cli.js"
   },
   "files": [
     "dist",
