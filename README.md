@@ -53,12 +53,19 @@ npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code -g
 ### 2. Start server + pair
 
 ```bash
+# Global install
 browser-bridge server start
 browser-bridge pair
+
+# Or npx (no install)
+npx browser-bridge-cli server start
+npx browser-bridge-cli pair
 # Enter 6-digit code in extension popup
 ```
 
 ## CLI Commands
+
+All commands support both `browser-bridge <cmd>` (global install) and `npx browser-bridge-cli <cmd>` (no install).
 
 ```bash
 # Server management
