@@ -1,0 +1,43 @@
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: bun install
+
+      - run: bun run build
+
+      - run: chmod +x dist/cli.js
+
+      - name: Package extension
+        run: |
+          cd extension
+          zip -r ../browser-bridge-extension-${{ github.ref_name }}.zip .
+          cd ..
+
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            browser-bridge-extension-${{ github.ref_name }}.zip
+          generate_release_notes: true

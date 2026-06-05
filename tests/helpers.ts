@@ -2,11 +2,13 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { chromium, type BrowserContext } from '@playwright/test';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, '..');
-const SERVER_PATH = path.join(PROJECT_ROOT, 'bridge', 'src', 'server.ts');
-const CLI_PATH = path.join(PROJECT_ROOT, 'cli', 'src', 'index.ts');
+const SERVER_PATH = path.join(PROJECT_ROOT, 'src', 'server.ts');
+const CLI_PATH = path.join(PROJECT_ROOT, 'src', 'cli.ts');
 const EXTENSION_PATH = path.join(PROJECT_ROOT, 'extension');
 
 export type ServerInstance = {

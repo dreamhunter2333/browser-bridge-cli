@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -118,13 +117,6 @@ export function getBridgeUrl(): string {
   return resolveConfig(_globalOpts).url;
 }
 
-export function detectRuntime(): { cmd: string; args: string[] } {
-  try {
-    if (typeof Bun !== 'undefined') return { cmd: 'bun', args: ['run'] };
-  } catch {}
-  return { cmd: 'npx', args: ['tsx'] };
-}
-
 export async function ensureServer(): Promise<void> {
   const config = resolveConfig(_globalOpts);
   if (!config.isLocal) {
@@ -134,20 +126,15 @@ export async function ensureServer(): Promise<void> {
 
   if (await health()) return;
 
-  const serverPath = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    '..', '..', 'bridge', 'src', 'server.ts'
-  );
-
-  const rt = detectRuntime();
-  const spawnArgs = [...rt.args, serverPath];
+  const serverPath = path.resolve(__dirname, 'server.js');
+  const spawnArgs = [serverPath];
   try {
     const u = new URL(config.url);
     if (u.hostname && u.hostname !== '127.0.0.1') spawnArgs.push('--host', u.hostname);
     if (u.port) spawnArgs.push('--port', u.port);
   } catch {}
 
-  const child = spawn(rt.cmd, spawnArgs, {
+  const child = spawn('node', spawnArgs, {
     detached: true,
     stdio: 'ignore',
   });

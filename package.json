@@ -1,21 +1,33 @@
 {
-  "name": "browser-bridge",
-  "private": true,
+  "name": "browser-bridge-cli",
   "version": "0.1.0",
-  "description": "Control Chrome browser via CLI through a browser extension",
-  "workspaces": ["bridge", "cli"],
+  "description": "Control Chrome/Edge browser via CLI through a browser extension",
+  "type": "module",
+  "bin": {
+    "browser-bridge": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "extension"
+  ],
   "scripts": {
-    "start": "bun bridge/src/server.ts || npx tsx bridge/src/server.ts",
-    "start:bun": "bun bridge/src/server.ts",
-    "start:node": "npx tsx bridge/src/server.ts",
-    "cli": "bun cli/src/index.ts || npx tsx cli/src/index.ts",
-    "cli:bun": "bun cli/src/index.ts",
-    "cli:node": "npx tsx cli/src/index.ts",
+    "build": "bun build src/cli.ts --target node --outfile dist/cli.js && bun build src/server.ts --target node --outfile dist/server.js",
+    "dev": "bun src/cli.ts",
+    "dev:server": "bun src/server.ts",
+    "prepublishOnly": "bun run build",
     "test": "npx playwright test"
   },
+  "dependencies": {},
   "devDependencies": {
     "@playwright/test": "^1.60.0",
-    "playwright": "^1.60.0",
-    "tsx": "^4.19.0"
-  }
+    "@types/ws": "^8.5.0",
+    "commander": "^12.1.0",
+    "ws": "^8.17.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dreamhunter2333/browser-bridge-cli.git"
+  },
+  "keywords": ["browser", "chrome", "cli", "devtools", "cdp", "extension"],
+  "license": "MIT"
 }

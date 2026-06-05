@@ -1,7 +1,7 @@
+#!/usr/bin/env node
 import { program } from 'commander';
-import { request, health, ensureServer, getBridgeUrl, setGlobalOpts, resolveConfig, pairWithServer, saveConfig, loadConfigFile, resetConfig, isLocalServer, STATE_DIR, detectRuntime } from './client.js';
+import { request, health, ensureServer, getBridgeUrl, setGlobalOpts, resolveConfig, pairWithServer, saveConfig, loadConfigFile, resetConfig, isLocalServer, STATE_DIR } from './client.js';
 import { spawn, execSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -304,10 +304,10 @@ program
     console.log(`Switched to client ${clientId}`);
   });
 
-// --- server management ---
+// --- server subcommand ---
 
 const pidFile = path.join(STATE_DIR, 'server.pid');
-const serverScript = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'bridge', 'src', 'server.ts');
+const serverScript = path.resolve(__dirname, 'server.js');
 
 function readPid(): number | null {
   try {
@@ -315,14 +315,23 @@ function readPid(): number | null {
     if (!pid) return null;
     process.kill(pid, 0);
     const cmdline = execSync(`ps -p ${pid} -o args=`, { encoding: 'utf-8' }).trim();
-    if (!cmdline.includes('server.ts')) return null;
+    if (!cmdline.includes('server')) return null;
     return pid;
   } catch {
     return null;
   }
 }
 
-program
+function run(cmd: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const p = spawn(cmd, args, { stdio: 'inherit' });
+    p.on('close', code => code === 0 ? resolve() : reject(new Error(`${cmd} exited ${code}`)));
+  });
+}
+
+const serverCmd = program.command('server').description('Manage bridge server');
+
+serverCmd
   .command('start')
   .description('Start bridge server in background')
   .option('--host <host>', 'Bind host', '127.0.0.1')
@@ -341,10 +350,9 @@ program
         process.exit(1);
       }
     } catch {}
-    const rt = detectRuntime();
-    const args = [...rt.args, serverScript, '--host', opts.host, '--port', opts.port];
+    const args = ['node', serverScript, '--host', opts.host, '--port', opts.port];
     if (opts.token) args.push('--token', opts.token);
-    const child = spawn(rt.cmd, args, { detached: true, stdio: 'ignore' });
+    const child = spawn(args[0], args.slice(1), { detached: true, stdio: 'ignore' });
     child.unref();
     for (let i = 0; i < 20; i++) {
       await new Promise(r => setTimeout(r, 300));
@@ -359,7 +367,7 @@ program
     process.exit(1);
   });
 
-program
+serverCmd
   .command('stop')
   .description('Stop bridge server')
   .action(() => {
@@ -372,7 +380,7 @@ program
     console.log(`Server stopped (PID ${pid})`);
   });
 
-program
+serverCmd
   .command('status')
   .description('Check if bridge server is running')
   .action(async () => {
@@ -388,7 +396,17 @@ program
     console.log(`Health: ${isHealthy ? 'ok' : 'unreachable'}`);
   });
 
-program
+serverCmd
+  .command('gen-pair')
+  .description('Generate a pairing code on the running server')
+  .action(async () => {
+    const result = await request('pair.request') as { code: string };
+    console.log(`\n  Pairing code: ${result.code}\n`);
+    console.log('Enter this code in the CLI or extension to pair.');
+    console.log('Code expires in 5 minutes.');
+  });
+
+serverCmd
   .command('install-service')
   .description('Install as systemd user service (Linux)')
   .option('--host <host>', 'Bind host', '127.0.0.1')
@@ -412,8 +430,7 @@ program
       return;
     }
 
-    const rt2 = detectRuntime();
-    const execArgs = [rt2.cmd, ...rt2.args, serverScript, '--host', opts.host, '--port', opts.port];
+    const execArgs = ['node', serverScript, '--host', opts.host, '--port', opts.port];
     if (opts.token) execArgs.push('--token', opts.token);
     const escapedExecStart = execArgs.map(a => a.includes(' ') ? `"${a}"` : a).join(' ');
     const escapedHome = os.homedir().includes(' ') ? `"${os.homedir()}"` : os.homedir();
@@ -444,13 +461,6 @@ WantedBy=default.target
     console.log(`  Status: systemctl --user status browser-bridge`);
     console.log(`  Logs:   journalctl --user -u browser-bridge -f`);
   });
-
-function run(cmd: string, args: string[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const p = spawn(cmd, args, { stdio: 'inherit' });
-    p.on('close', code => code === 0 ? resolve() : reject(new Error(`${cmd} exited ${code}`)));
-  });
-}
 
 // --- config subcommand ---
 
