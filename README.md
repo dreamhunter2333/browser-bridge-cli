@@ -28,13 +28,13 @@ npx browser-bridge-cli info
 
 ```bash
 # Install to Claude Code
-npx skills add dreamhunter2333/browser-bridge-cli:skill --agent claude-code
+npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code
 
 # Install to multiple agents
-npx skills add dreamhunter2333/browser-bridge-cli:skill --agent claude-code codex
+npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code codex
 
 # Install globally
-npx skills add dreamhunter2333/browser-bridge-cli:skill --agent claude-code -g
+npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code -g
 ```
 
 ## Prerequisites
