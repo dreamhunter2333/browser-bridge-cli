@@ -1,6 +1,6 @@
 {
   "name": "browser-bridge-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Control Chrome/Edge browser via CLI through a browser extension",
   "type": "module",
   "bin": {
@@ -28,6 +28,13 @@
     "type": "git",
     "url": "https://github.com/dreamhunter2333/browser-bridge-cli.git"
   },
-  "keywords": ["browser", "chrome", "cli", "devtools", "cdp", "extension"],
+  "keywords": [
+    "browser",
+    "chrome",
+    "cli",
+    "devtools",
+    "cdp",
+    "extension"
+  ],
   "license": "MIT"
 }
