@@ -53,11 +53,6 @@ npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code -g
 ### 2. Start server + pair
 
 ```bash
-# Global install
-browser-bridge server start
-browser-bridge pair
-
-# Or npx (no install)
 npx browser-bridge-cli server start
 npx browser-bridge-cli pair
 # Enter 6-digit code in extension popup
@@ -65,46 +60,44 @@ npx browser-bridge-cli pair
 
 ## CLI Commands
 
-All commands support both `browser-bridge <cmd>` (global install) and `npx browser-bridge-cli <cmd>` (no install).
-
 ```bash
 # Server management
-browser-bridge server start [--host 0.0.0.0] [--port 9000] [--token xxx]
-browser-bridge server stop
-browser-bridge server status
-browser-bridge server gen-pair
-browser-bridge server install-service [--uninstall]   # systemd daemon (Linux)
+npx browser-bridge-cli server start [--host 0.0.0.0] [--port 9000] [--token xxx]
+npx browser-bridge-cli server stop
+npx browser-bridge-cli server status
+npx browser-bridge-cli server gen-pair
+npx browser-bridge-cli server install-service [--uninstall]   # systemd daemon (Linux)
 
 # Pairing
-browser-bridge pair [-n name]               # Local: generate code for extension
-browser-bridge pair --server http://remote   # Remote: enter code to pair CLI
-browser-bridge unpair                        # Revoke + clear credentials
+npx browser-bridge-cli pair [-n name]               # Local: generate code for extension
+npx browser-bridge-cli pair --server http://remote   # Remote: enter code to pair CLI
+npx browser-bridge-cli unpair                        # Revoke + clear credentials
 
 # Configuration
-browser-bridge config get                    # Show config (tokens masked)
-browser-bridge config set <key> <value>      # Set server, token, or name
-browser-bridge config reset                  # Clear all config
+npx browser-bridge-cli config get                    # Show config (tokens masked)
+npx browser-bridge-cli config set <key> <value>      # Set server, token, or name
+npx browser-bridge-cli config reset                  # Clear all config
 
 # Browser control
-browser-bridge info                          # Server status + clients
-browser-bridge tabs                          # List all tabs
-browser-bridge tab <id>                      # Tab details
-browser-bridge eval <expr> [-t id] [-k]      # Execute JS
-browser-bridge eval-file <file> [-t id]      # Execute JS file
-browser-bridge query <selector> [-t id]      # Query DOM
-browser-bridge new-tab [url]                 # Create tab
-browser-bridge close-tab <id>                # Close tab
-browser-bridge activate <id>                 # Switch tab
-browser-bridge navigate <url> [-t id]        # Navigate
-browser-bridge reload [-t id] [--no-cache]   # Reload
-browser-bridge screenshot [-o file] [-f]     # Screenshot
-browser-bridge pdf [-o file] [-t id]         # PDF export
-browser-bridge network [-l limit] [--clear]  # Network log
-browser-bridge cookies [-u url] [-d domain]  # Cookies
-browser-bridge cdp <method> [params] [-t id] # Raw CDP command
-browser-bridge detach [-t id]                # Detach debugger
-browser-bridge clients                       # List clients
-browser-bridge switch <clientId>             # Switch active client
+npx browser-bridge-cli info                          # Server status + clients
+npx browser-bridge-cli tabs                          # List all tabs
+npx browser-bridge-cli tab <id>                      # Tab details
+npx browser-bridge-cli eval <expr> [-t id] [-k]      # Execute JS
+npx browser-bridge-cli eval-file <file> [-t id]      # Execute JS file
+npx browser-bridge-cli query <selector> [-t id]      # Query DOM
+npx browser-bridge-cli new-tab [url]                 # Create tab
+npx browser-bridge-cli close-tab <id>                # Close tab
+npx browser-bridge-cli activate <id>                 # Switch tab
+npx browser-bridge-cli navigate <url> [-t id]        # Navigate
+npx browser-bridge-cli reload [-t id] [--no-cache]   # Reload
+npx browser-bridge-cli screenshot [-o file] [-f]     # Screenshot
+npx browser-bridge-cli pdf [-o file] [-t id]         # PDF export
+npx browser-bridge-cli network [-l limit] [--clear]  # Network log
+npx browser-bridge-cli cookies [-u url] [-d domain]  # Cookies
+npx browser-bridge-cli cdp <method> [params] [-t id] # Raw CDP command
+npx browser-bridge-cli detach [-t id]                # Detach debugger
+npx browser-bridge-cli clients                       # List clients
+npx browser-bridge-cli switch <clientId>             # Switch active client
 ```
 
 Global options: `-s, --server <url>`, `--token <token>`
