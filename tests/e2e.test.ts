@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { startServer, stopServer, apiCall, httpPair, generateCode, launchBrowserWithExtension, getExtensionPopup, runCli, type ServerInstance } from './helpers';
+import { startServer, stopServer, apiCall, httpPair, generateCode, launchBrowserWithExtension, getExtensionPopup, nextPort, runCli, stateEnv, type ServerInstance } from './helpers';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -279,11 +279,12 @@ test.describe('Extension via Playwright', () => {
     try {
       await expect(popup.locator('#statusMain')).toContainText('Connected', { timeout: 30_000 });
     } catch {
-      await popup.screenshot({ path: '/tmp/bb-pair-debug.png' });
+      const debugPath = path.join(os.tmpdir(), 'bb-pair-debug.png');
+      await popup.screenshot({ path: debugPath });
       const statusText = await popup.locator('#statusMain').textContent();
       const pairError = await popup.locator('#pairError').textContent();
       const sub = await popup.locator('#statusSub').textContent();
-      throw new Error(`Pair failed. Status: "${statusText}", Sub: "${sub}", Error: "${pairError}". Screenshot at /tmp/bb-pair-debug.png`);
+      throw new Error(`Pair failed. Status: "${statusText}", Sub: "${sub}", Error: "${pairError}". Screenshot at ${debugPath}`);
     }
     await popup.close();
   });
@@ -338,7 +339,7 @@ test.describe('CLI commands', () => {
 
   test('config set/get/reset', async () => {
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-cli-test-'));
-    const env = { HOME: stateDir };
+    const env = stateEnv(stateDir);
 
     const set = await runCli(['config', 'set', 'server', 'http://test:9000'], env);
     expect(set.code).toBe(0);
@@ -357,12 +358,44 @@ test.describe('CLI commands', () => {
 
   test('config get masks token', async () => {
     const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-cli-mask-'));
-    const env = { HOME: stateDir };
+    const env = stateEnv(stateDir);
     await runCli(['config', 'set', 'token', 'abcdef12-3456-7890-abcd-ef1234567890'], env);
     const { stdout } = await runCli(['config', 'get'], env);
     expect(stdout).toContain('abcdef12...');
     expect(stdout).not.toContain('3456-7890');
     fs.rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  test('server start/status/stop lifecycle', async () => {
+    const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-cli-server-'));
+    const port = nextPort();
+    const env = stateEnv(stateDir);
+
+    try {
+      const start = await runCli(['server', 'start', '--port', String(port), '--token', 'server-lifecycle-token'], env);
+      expect(start.code).toBe(0);
+      expect(start.stdout).toContain('Server started');
+
+      const status = await runCli(['server', 'status'], env);
+      expect(status.code).toBe(0);
+      expect(status.stdout).toContain('Server running');
+      expect(status.stdout).toContain('Health: ok');
+
+      const stop = await runCli(['server', 'stop'], env);
+      expect(stop.code).toBe(0);
+      expect(stop.stdout).toContain('Server stopped');
+    } finally {
+      await runCli(['server', 'stop'], env).catch(() => undefined);
+      fs.rmSync(stateDir, { recursive: true, force: true });
+    }
+  });
+
+  test('install-service is guarded outside Linux', async () => {
+    test.skip(process.platform === 'linux', 'install-service is intentionally Linux-only.');
+
+    const { code, stderr } = await runCli(['server', 'install-service']);
+    expect(code).toBe(1);
+    expect(stderr).toContain('install-service is only supported on Linux');
   });
 });
 

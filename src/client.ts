@@ -127,7 +127,11 @@ export async function ensureServer(): Promise<void> {
 
   if (await health()) return;
 
-  const serverPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'server.js');
+  const serverDir = path.dirname(fileURLToPath(import.meta.url));
+  const serverJs = path.resolve(serverDir, 'server.js');
+  const serverTs = path.resolve(serverDir, 'server.ts');
+  const serverPath = fs.existsSync(serverJs) ? serverJs : serverTs;
+  const runtime = serverPath.endsWith('.ts') ? 'bun' : 'node';
   const spawnArgs = [serverPath];
   try {
     const u = new URL(config.url);
@@ -135,7 +139,7 @@ export async function ensureServer(): Promise<void> {
     if (u.port) spawnArgs.push('--port', u.port);
   } catch {}
 
-  const child = spawn('node', spawnArgs, {
+  const child = spawn(runtime, spawnArgs, {
     detached: true,
     stdio: 'ignore',
   });

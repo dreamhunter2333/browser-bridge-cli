@@ -1,0 +1,43 @@
+name: Test
+
+on:
+  push:
+    branches: ['main']
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - run: bun install
+
+      - name: Install Playwright browser
+        if: runner.os != 'Linux'
+        run: bun x playwright install chromium
+
+      - name: Install Playwright browser and Linux dependencies
+        if: runner.os == 'Linux'
+        run: bun x playwright install --with-deps chromium
+
+      - run: bun run build
+
+      - name: Run tests
+        if: runner.os != 'Linux'
+        run: bun run test
+
+      - name: Run tests with Xvfb
+        if: runner.os == 'Linux'
+        run: xvfb-run -a bun run test

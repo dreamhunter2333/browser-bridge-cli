@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { program } from 'commander';
 import { request, health, ensureServer, getBridgeUrl, setGlobalOpts, resolveConfig, pairWithServer, saveConfig, loadConfigFile, resetConfig, isLocalServer, STATE_DIR } from './client.js';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -322,14 +322,36 @@ program
 
 const pidFile = path.join(STATE_DIR, 'server.pid');
 const __cli_dirname = path.dirname(fileURLToPath(import.meta.url));
-const serverScript = path.resolve(__cli_dirname, 'server.js');
+const serverJs = path.resolve(__cli_dirname, 'server.js');
+const serverTs = path.resolve(__cli_dirname, 'server.ts');
+const serverScript = fs.existsSync(serverJs) ? serverJs : serverTs;
+const serverRuntime = serverScript.endsWith('.ts') ? 'bun' : 'node';
+
+function getProcessCommandLine(pid: number): string | null {
+  if (process.platform === 'win32') {
+    const result = spawnSync('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `(Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}").CommandLine`,
+    ], { encoding: 'utf-8' });
+
+    if (result.status !== 0) return null;
+    return result.stdout.trim() || null;
+  }
+
+  const result = spawnSync('ps', ['-p', String(pid), '-o', 'args='], { encoding: 'utf-8' });
+  if (result.status !== 0) return null;
+  return result.stdout.trim() || null;
+}
 
 function readPid(): number | null {
   try {
     const pid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10);
     if (!pid) return null;
     process.kill(pid, 0);
-    const cmdline = execSync(`ps -p ${pid} -o args=`, { encoding: 'utf-8' }).trim();
+    const cmdline = getProcessCommandLine(pid);
+    if (!cmdline) return null;
     if (!cmdline.includes('server')) return null;
     return pid;
   } catch {
@@ -368,7 +390,7 @@ serverCmd
     } catch {}
     const args = [serverScript, '--host', opts.host, '--port', opts.port];
     if (opts.token) args.push('--token', opts.token);
-    const child = spawn('node', args, { detached: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    const child = spawn(serverRuntime, args, { detached: true, stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     child.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
     child.unref();
@@ -458,7 +480,7 @@ serverCmd
       return;
     }
 
-    const execArgs = ['node', serverScript, '--host', opts.host, '--port', opts.port];
+    const execArgs = [serverRuntime, serverScript, '--host', opts.host, '--port', opts.port];
     if (opts.token) execArgs.push('--token', opts.token);
     const escapedExecStart = execArgs.map(a => a.includes(' ') ? `"${a}"` : a).join(' ');
     const escapedHome = os.homedir().includes(' ') ? `"${os.homedir()}"` : os.homedir();

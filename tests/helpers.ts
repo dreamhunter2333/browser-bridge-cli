@@ -21,13 +21,29 @@ export type ServerInstance = {
 
 let portCounter = 19100;
 
+export function nextPort(): number {
+  return portCounter++;
+}
+
+export function stateEnv(stateDir: string): Record<string, string> {
+  if (process.platform !== 'win32') return { HOME: stateDir };
+
+  const root = path.parse(stateDir).root;
+  return {
+    HOME: stateDir,
+    USERPROFILE: stateDir,
+    HOMEDRIVE: root.slice(0, 2),
+    HOMEPATH: stateDir.slice(2) || '\\',
+  };
+}
+
 export async function startServer(opts?: { token?: string; port?: number }): Promise<ServerInstance> {
-  const port = opts?.port || portCounter++;
+  const port = opts?.port || nextPort();
   const token = opts?.token || `test-server-token-${port}`;
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-test-'));
 
   const proc = spawn('bun', ['run', SERVER_PATH, '--host', '127.0.0.1', '--port', String(port), '--token', token], {
-    env: { ...process.env, HOME: stateDir },
+    env: { ...process.env, ...stateEnv(stateDir) },
     stdio: 'pipe',
   });
 
