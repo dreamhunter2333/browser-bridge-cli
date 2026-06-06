@@ -22,9 +22,22 @@ function prompt(question: string): Promise<string> {
   });
 }
 
+function readPackageVersion(): string {
+  try {
+    const cliDir = path.dirname(fileURLToPath(import.meta.url));
+    const packagePath = path.resolve(cliDir, '../package.json');
+    const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf-8')) as { version?: string };
+
+    if (packageJson.version) return packageJson.version;
+    return '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
 program
   .name('browser-bridge-cli')
-  .version('0.1.0')
+  .version(readPackageVersion())
   .description('Browser Bridge CLI')
   .option('-s, --server <url>', 'Bridge server URL')
   .option('--token <token>', 'Authentication token')

@@ -24,6 +24,9 @@ npm i -g browser-bridge-cli
 
 # Or use directly (no install)
 npx browser-bridge-cli info
+
+# Or with Bun
+bunx browser-bridge-cli info
 ```
 
 ### Install as AI Agent Skill
@@ -69,6 +72,8 @@ npx browser-bridge-cli server gen-pair
 ```
 
 ## CLI Commands
+
+`bunx browser-bridge-cli ...` can be used anywhere `npx browser-bridge-cli ...` appears below.
 
 ```bash
 # Server management
