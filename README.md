@@ -47,6 +47,12 @@ npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code -g
 - Node.js >= 20 or [Bun](https://bun.sh/) >= 1.0
 - Chrome or Edge browser
 
+## Supported Platforms
+
+- Windows, macOS, and Linux are supported for normal CLI usage, including `server start`, `server stop`, `server status`, pairing, tab control, screenshots, PDF export, network logs, cookies, and raw CDP commands.
+- `server install-service` is Linux-only because it installs a systemd user service. On Windows and macOS, start the bridge with `server start` instead.
+- CI runs build and e2e tests on both `ubuntu-latest` and `windows-latest`.
+
 ## Setup
 
 ### 1. Load browser extension

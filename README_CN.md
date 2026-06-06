@@ -47,6 +47,12 @@ npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code -g
 - Node.js >= 20 或 [Bun](https://bun.sh/) >= 1.0
 - Chrome 或 Edge 浏览器
 
+## 平台支持
+
+- Windows、macOS、Linux 均支持常规 CLI 使用，包括 `server start`、`server stop`、`server status`、配对、标签页控制、截图、PDF 导出、网络日志、Cookie 和原始 CDP 命令。
+- `server install-service` 仅支持 Linux，因为它安装的是 systemd user service。Windows 和 macOS 请使用 `server start` 启动 bridge。
+- CI 会在 `ubuntu-latest` 和 `windows-latest` 上运行构建与 e2e 测试。
+
 ## 配置
 
 ### 1. 加载浏览器扩展
