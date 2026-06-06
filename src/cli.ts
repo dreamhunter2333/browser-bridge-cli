@@ -364,6 +364,7 @@ serverCmd
       try {
         const res = await fetch(`http://${opts.host}:${opts.port}/api/health`);
         if (res.ok) {
+          child.stderr?.destroy();
           const pid = readPid() || child.pid;
           console.log(`Server started (PID ${pid})`);
           console.log(`Listening on http://${opts.host}:${opts.port}`);
@@ -371,6 +372,7 @@ serverCmd
         }
       } catch {}
     }
+    child.stderr?.destroy();
     if (stderr.trim()) {
       console.error(`Failed to start server:\n${stderr.trim()}`);
     } else {
