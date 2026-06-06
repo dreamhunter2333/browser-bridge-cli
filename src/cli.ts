@@ -2,6 +2,7 @@
 import { program } from 'commander';
 import { request, health, ensureServer, getBridgeUrl, setGlobalOpts, resolveConfig, pairWithServer, saveConfig, loadConfigFile, resetConfig, isLocalServer, STATE_DIR } from './client.js';
 import { spawn, execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -307,7 +308,8 @@ program
 // --- server subcommand ---
 
 const pidFile = path.join(STATE_DIR, 'server.pid');
-const serverScript = path.resolve(__dirname, 'server.js');
+const __cli_dirname = path.dirname(fileURLToPath(import.meta.url));
+const serverScript = path.resolve(__cli_dirname, 'server.js');
 
 function readPid(): number | null {
   try {
@@ -346,24 +348,35 @@ serverCmd
     try {
       const probe = await fetch(`http://${opts.host}:${opts.port}/api/health`);
       if (probe.ok) {
-        console.error(`Port ${opts.port} already in use by another process.`);
+        console.error(`Error: Port ${opts.port} already in use on ${opts.host}.`);
+        console.error(`Try: npx browser-bridge-cli server start --port <other-port>`);
         process.exit(1);
       }
     } catch {}
-    const args = ['node', serverScript, '--host', opts.host, '--port', opts.port];
+    const args = [serverScript, '--host', opts.host, '--port', opts.port];
     if (opts.token) args.push('--token', opts.token);
-    const child = spawn(args[0], args.slice(1), { detached: true, stdio: 'ignore' });
+    const child = spawn('node', args, { detached: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
     child.unref();
     for (let i = 0; i < 20; i++) {
       await new Promise(r => setTimeout(r, 300));
-      const pid = readPid();
-      if (pid) {
-        console.log(`Server started (PID ${pid})`);
-        console.log(`Listening on http://${opts.host}:${opts.port}`);
-        return;
-      }
+      try {
+        const res = await fetch(`http://${opts.host}:${opts.port}/api/health`);
+        if (res.ok) {
+          const pid = readPid() || child.pid;
+          console.log(`Server started (PID ${pid})`);
+          console.log(`Listening on http://${opts.host}:${opts.port}`);
+          return;
+        }
+      } catch {}
     }
-    console.error('Failed to start server');
+    if (stderr.trim()) {
+      console.error(`Failed to start server:\n${stderr.trim()}`);
+    } else {
+      console.error(`Failed to start server on http://${opts.host}:${opts.port}`);
+      console.error('Check if the port is available or try a different port.');
+    }
     process.exit(1);
   });
 

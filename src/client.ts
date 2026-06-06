@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import * as path from 'node:path';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -126,7 +127,7 @@ export async function ensureServer(): Promise<void> {
 
   if (await health()) return;
 
-  const serverPath = path.resolve(__dirname, 'server.js');
+  const serverPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'server.js');
   const spawnArgs = [serverPath];
   try {
     const u = new URL(config.url);
