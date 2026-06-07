@@ -9,11 +9,9 @@ graph LR
     CLI["CLI (TypeScript)"]
     Bridge["Bridge 服务器 (:52853)"]
     Ext["扩展 (Service Worker)"]
-    Browser["浏览器页面"]
 
     CLI -->|"HTTP + token"| Bridge
     Bridge -->|"WebSocket"| Ext
-    Ext -->|"chrome.debugger / tabs"| Browser
 ```
 
 ## 安装
@@ -89,17 +87,11 @@ npx browser-bridge-cli server gen-pair
 ```mermaid
 graph LR
     CLI["机器 B：CLI Client"]
-    Host["机器 A：浏览器主机"]
-    Bridge["Bridge Server"]
-    Ext["扩展 Client"]
-    Browser["Chrome/Edge"]
+    Bridge["机器 A：Bridge Server"]
+    Ext["机器 A：扩展 Client"]
 
     CLI -->|"HTTP API: http://HOST:52853 + token"| Bridge
     Bridge -->|"WebSocket: ws://127.0.0.1:52853/ext"| Ext
-    Ext -->|"chrome.debugger / tabs"| Browser
-    Host --- Bridge
-    Host --- Ext
-    Host --- Browser
 ```
 
 ### 机器 A：浏览器主机
@@ -166,11 +158,9 @@ graph LR
     CLI["机器 C：CLI Client"]
     Bridge["机器 A：Bridge Server"]
     Ext["机器 B：扩展 Client"]
-    Browser["机器 B：Chrome/Edge"]
 
     CLI -->|"HTTP API: http://SERVER:52853 + token"| Bridge
     Ext -->|"WebSocket: ws://SERVER:52853/ext"| Bridge
-    Ext -->|"chrome.debugger / tabs"| Browser
 ```
 
 适用场景：浏览器开在一台机器上，长期运行的 Bridge Server 放在另一台机器上，命令从第三台机器发出。

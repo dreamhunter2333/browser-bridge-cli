@@ -9,11 +9,9 @@ graph LR
     CLI["CLI (TypeScript)"]
     Bridge["Bridge Server (:52853)"]
     Ext["Extension (Service Worker)"]
-    Browser["Browser Page"]
 
     CLI -->|"HTTP + token"| Bridge
     Bridge -->|"WebSocket"| Ext
-    Ext -->|"chrome.debugger / tabs"| Browser
 ```
 
 ## Install
@@ -89,17 +87,11 @@ Use this mode when Chrome/Edge and the Bridge Server run on the same machine, wh
 ```mermaid
 graph LR
     CLI["Machine B: CLI Client"]
-    Host["Machine A: Browser Host"]
-    Bridge["Bridge Server"]
-    Ext["Extension Client"]
-    Browser["Chrome/Edge"]
+    Bridge["Machine A: Bridge Server"]
+    Ext["Machine A: Extension Client"]
 
     CLI -->|"HTTP API: http://HOST:52853 + token"| Bridge
     Bridge -->|"WebSocket: ws://127.0.0.1:52853/ext"| Ext
-    Ext -->|"chrome.debugger / tabs"| Browser
-    Host --- Bridge
-    Host --- Ext
-    Host --- Browser
 ```
 
 ### Machine A: Browser Host
@@ -166,11 +158,9 @@ graph LR
     CLI["Machine C: CLI Client"]
     Bridge["Machine A: Bridge Server"]
     Ext["Machine B: Extension Client"]
-    Browser["Machine B: Chrome/Edge"]
 
     CLI -->|"HTTP API: http://SERVER:52853 + token"| Bridge
     Ext -->|"WebSocket: ws://SERVER:52853/ext"| Bridge
-    Ext -->|"chrome.debugger / tabs"| Browser
 ```
 
 Use this mode when the browser is open on one machine, the long-running bridge server is hosted on another machine, and commands are sent from a third machine.
