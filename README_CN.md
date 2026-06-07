@@ -77,6 +77,103 @@ npx browser-bridge-cli server gen-pair
 # 4. 在扩展弹窗中输入 6 位配对码 → 点击 Pair
 ```
 
+## 三台机器部署
+
+Browser Bridge 可以把三个角色分别放在三台机器上：
+
+```mermaid
+graph LR
+    CLI["机器 C：CLI Client"]
+    Bridge["机器 A：Bridge Server"]
+    Ext["机器 B：扩展 Client"]
+    Browser["机器 B：Chrome/Edge"]
+
+    CLI -->|"HTTP API: http://SERVER:52853 + token"| Bridge
+    Ext -->|"WebSocket: ws://SERVER:52853/ext"| Bridge
+    Ext -->|"chrome.debugger / tabs"| Browser
+```
+
+适用场景：浏览器开在一台机器上，长期运行的 Bridge Server 放在另一台机器上，命令从第三台机器发出。
+
+### 机器 A：Bridge Server
+
+把服务器启动在另外两台机器能访问到的地址上：
+
+```bash
+npx browser-bridge-cli server start --host 0.0.0.0 --port 52853 --token <server-token>
+```
+
+注意：
+
+- 防火墙或安全组需要放行 TCP `52853`。
+- 尽量使用 VPN、SSH tunnel、带 HTTPS 的反向代理或内网访问，不建议把未保护的端口直接暴露到公网。
+- 妥善保管 `<server-token>`。它可以生成配对码，也可以撤销 client token。
+- Linux 上可以安装为 user service：
+
+```bash
+npx browser-bridge-cli server install-service --host 0.0.0.0 --port 52853 --token <server-token>
+```
+
+每个 client 都需要单独生成一个配对码。配对码一次性使用，5 分钟过期：
+
+```bash
+npx browser-bridge-cli --server http://<server-ip>:52853 --token <server-token> server gen-pair
+```
+
+### 机器 B：浏览器 + 扩展 Client
+
+在运行 Chrome/Edge 的机器上安装并加载扩展。
+
+在扩展弹窗里：
+
+1. 打开扩展开关。
+2. 把服务器 URL 设置为 `ws://<server-ip>:52853/ext`。
+3. 输入机器 A 生成的配对码。
+4. 点击 **Pair**。
+
+配对后，这台机器会保持到机器 A 的 WebSocket 连接。浏览器所在机器不需要运行 CLI。
+
+### 机器 C：CLI Client
+
+在发命令的机器上安装或直接运行 CLI：
+
+```bash
+npx browser-bridge-cli pair --server http://<server-ip>:52853 -n <cli-name>
+```
+
+输入机器 A 新生成的配对码。CLI 会把 client token 保存到 `~/.browser-bridge/config.json`。
+
+之后如果配置已保存，命令可以省略 `--server`：
+
+```bash
+npx browser-bridge-cli info
+npx browser-bridge-cli tabs
+npx browser-bridge-cli new-tab https://example.com
+```
+
+也可以只在单条命令里显式指定服务器：
+
+```bash
+npx browser-bridge-cli --server http://<server-ip>:52853 tabs
+```
+
+### Token 模型
+
+- Server token：机器 A 的管理凭证，可以生成配对码和撤销 token。
+- 扩展 client token：扩展配对后保存，用于认证 WebSocket 连接。
+- CLI client token：机器 C 执行 `pair --server` 后保存，可以执行浏览器命令，但不能生成配对码。
+
+如果不想交互式配对 CLI，也可以直接写入配置或环境变量：
+
+```bash
+npx browser-bridge-cli config set server http://<server-ip>:52853
+npx browser-bridge-cli config set token <client-or-server-token>
+
+# 或者
+export BROWSER_BRIDGE_URL=http://<server-ip>:52853
+export BROWSER_BRIDGE_TOKEN=<client-or-server-token>
+```
+
 ## 命令列表
 
 下方所有 `npx browser-bridge-cli ...` 命令都可以等价替换为 `bunx browser-bridge-cli ...`。

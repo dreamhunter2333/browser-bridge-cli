@@ -77,6 +77,103 @@ npx browser-bridge-cli server gen-pair
 # 4. Enter the 6-digit code in extension popup → click Pair
 ```
 
+## Three-Machine Deployment
+
+Browser Bridge can run with each role on a different machine:
+
+```mermaid
+graph LR
+    CLI["Machine C: CLI Client"]
+    Bridge["Machine A: Bridge Server"]
+    Ext["Machine B: Extension Client"]
+    Browser["Machine B: Chrome/Edge"]
+
+    CLI -->|"HTTP API: http://SERVER:52853 + token"| Bridge
+    Ext -->|"WebSocket: ws://SERVER:52853/ext"| Bridge
+    Ext -->|"chrome.debugger / tabs"| Browser
+```
+
+Use this mode when the browser is open on one machine, the long-running bridge server is hosted on another machine, and commands are sent from a third machine.
+
+### Machine A: Bridge Server
+
+Start the server on an address reachable by the other two machines:
+
+```bash
+npx browser-bridge-cli server start --host 0.0.0.0 --port 52853 --token <server-token>
+```
+
+Notes:
+
+- Open TCP port `52853` in the firewall or security group.
+- Use a VPN, SSH tunnel, reverse proxy with HTTPS, or a private network when possible. Do not expose an unauthenticated public endpoint.
+- Keep `<server-token>` private. It can generate pairing codes and revoke client tokens.
+- On Linux, you can run it as a user service:
+
+```bash
+npx browser-bridge-cli server install-service --host 0.0.0.0 --port 52853 --token <server-token>
+```
+
+Generate one pairing code for each client. Pairing codes are one-time-use and expire in 5 minutes:
+
+```bash
+npx browser-bridge-cli --server http://<server-ip>:52853 --token <server-token> server gen-pair
+```
+
+### Machine B: Browser + Extension Client
+
+Install and load the extension on the machine where Chrome/Edge is running.
+
+In the extension popup:
+
+1. Enable the extension toggle.
+2. Set the server URL to `ws://<server-ip>:52853/ext`.
+3. Enter a pairing code generated on Machine A.
+4. Click **Pair**.
+
+After pairing, this machine keeps a WebSocket connection to Machine A. The browser itself does not need to run the CLI.
+
+### Machine C: CLI Client
+
+Install or run the CLI on the command machine:
+
+```bash
+npx browser-bridge-cli pair --server http://<server-ip>:52853 -n <cli-name>
+```
+
+Enter a fresh pairing code generated on Machine A. The CLI stores its client token in `~/.browser-bridge/config.json`.
+
+After that, commands can omit `--server` if the config was saved:
+
+```bash
+npx browser-bridge-cli info
+npx browser-bridge-cli tabs
+npx browser-bridge-cli new-tab https://example.com
+```
+
+Or pass the server explicitly for one command:
+
+```bash
+npx browser-bridge-cli --server http://<server-ip>:52853 tabs
+```
+
+### Token Model
+
+- Server token: admin credential for Machine A. It can generate pairing codes and revoke tokens.
+- Extension client token: stored by the browser extension after pairing. It lets the extension authenticate its WebSocket connection.
+- CLI client token: stored by Machine C after `pair --server`. It can execute browser commands but cannot generate pairing codes.
+
+If you want to skip interactive CLI pairing, put a token in config or environment variables:
+
+```bash
+npx browser-bridge-cli config set server http://<server-ip>:52853
+npx browser-bridge-cli config set token <client-or-server-token>
+
+# or
+export BROWSER_BRIDGE_URL=http://<server-ip>:52853
+export BROWSER_BRIDGE_TOKEN=<client-or-server-token>
+```
+
 ## CLI Commands
 
 `bunx browser-bridge-cli ...` can be used anywhere `npx browser-bridge-cli ...` appears below.
