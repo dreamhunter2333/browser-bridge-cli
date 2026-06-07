@@ -84,6 +84,8 @@ Local CLI commands do not need `--server`. The CLI reads local server state from
 
 Use these topologies when the CLI is not on the same machine as the extension and/or Bridge Server.
 
+### Two Machines
+
 <details>
 <summary><strong>Two Machines: Server + Extension together, CLI remote</strong></summary>
 
@@ -139,6 +141,8 @@ Notes:
 - Do not run `server ...` commands from Machine B.
 
 </details>
+
+### Three Machines
 
 <details>
 <summary><strong>Three Machines: Server, Extension, and CLI separated</strong></summary>

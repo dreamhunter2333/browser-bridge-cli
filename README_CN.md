@@ -84,6 +84,8 @@ npx browser-bridge-cli tabs
 
 当 CLI 不在扩展和/或 Bridge Server 所在机器上时，使用下面的高级部署方式。
 
+### 两台机器
+
 <details>
 <summary><strong>两台机器：Server + Extension 同机，CLI 远程</strong></summary>
 
@@ -139,6 +141,8 @@ npx browser-bridge-cli new-tab https://example.com
 - 不要在机器 B 上执行 `server ...` 命令。
 
 </details>
+
+### 三台机器
 
 <details>
 <summary><strong>三台机器：Server、Extension、CLI 分离</strong></summary>
