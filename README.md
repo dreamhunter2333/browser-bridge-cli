@@ -77,7 +77,87 @@ npx browser-bridge-cli server gen-pair
 # 4. Enter the 6-digit code in extension popup → click Pair
 ```
 
-## Three-Machine Deployment
+## Deployment Topologies
+
+Rule: run every `server ...` command on the Bridge Server machine. Server-side commands use local state on that machine, so do not pass `--server` to them. On a remote CLI machine, `pair` must use `--server http://<server-host>:52853` to choose which server to connect to. Do not copy the server token to remote CLI machines.
+
+<details>
+<summary><strong>Two-Machine Deployment: Extension + Server on one machine, CLI remote</strong></summary>
+
+Use this mode when Chrome/Edge and the Bridge Server run on the same machine, while CLI commands come from any other machine.
+
+```mermaid
+graph LR
+    CLI["Machine B: CLI Client"]
+    Host["Machine A: Browser Host"]
+    Bridge["Bridge Server"]
+    Ext["Extension Client"]
+    Browser["Chrome/Edge"]
+
+    CLI -->|"HTTP API: http://HOST:52853 + token"| Bridge
+    Bridge -->|"WebSocket: ws://127.0.0.1:52853/ext"| Ext
+    Ext -->|"chrome.debugger / tabs"| Browser
+    Host --- Bridge
+    Host --- Ext
+    Host --- Browser
+```
+
+### Machine A: Browser Host
+
+Install the extension and start the bridge on an address reachable from Machine B:
+
+```bash
+npx browser-bridge-cli server start --host 0.0.0.0 --port 52853 --token <server-token>
+```
+
+In the extension popup:
+
+1. Enable the extension toggle.
+2. Keep the server URL as `ws://127.0.0.1:52853/ext`, or use `ws://localhost:52853/ext`.
+3. Generate a pairing code on Machine A. This is a server-side operation; run it locally on Machine A and do not pass `--server`:
+
+```bash
+npx browser-bridge-cli server gen-pair
+```
+
+4. Enter the 6-digit code in the extension popup and click **Pair**.
+
+Notes:
+
+- Machine A must allow inbound TCP `52853` from Machine B.
+- Keep `<server-token>` on Machine A. Remote CLI clients should pair and use their own client tokens.
+- Use a private network, VPN, SSH tunnel, or HTTPS reverse proxy for remote access when possible.
+
+### Machine B: Remote CLI Client
+
+Ask the operator on Machine A to run `npx browser-bridge-cli server gen-pair` locally again, because pairing codes are one-time-use. Then pair the CLI with the server running on Machine A. The `--server` option is required here because this command runs on the remote CLI machine:
+
+```bash
+npx browser-bridge-cli pair --server http://<browser-machine-ip>:52853 -n <cli-name>
+```
+
+Enter a fresh pairing code generated on Machine A. The CLI stores its token in `~/.browser-bridge/config.json`.
+
+Then run commands from Machine B:
+
+```bash
+npx browser-bridge-cli info
+npx browser-bridge-cli tabs
+npx browser-bridge-cli new-tab https://example.com
+```
+
+For one-off commands without saved config:
+
+```bash
+npx browser-bridge-cli --server http://<browser-machine-ip>:52853 --token <client-token> tabs
+```
+
+Do not run `server start`, `server stop`, `server status`, `server gen-pair`, or `server install-service` from Machine B. Those commands belong on Machine A.
+
+</details>
+
+<details>
+<summary><strong>Three-Machine Deployment: Server, Extension, and CLI on separate machines</strong></summary>
 
 Browser Bridge can run with each role on a different machine:
 
@@ -107,17 +187,17 @@ Notes:
 
 - Open TCP port `52853` in the firewall or security group.
 - Use a VPN, SSH tunnel, reverse proxy with HTTPS, or a private network when possible. Do not expose an unauthenticated public endpoint.
-- Keep `<server-token>` private. It can generate pairing codes and revoke client tokens.
+- Keep `<server-token>` on Machine A. It can generate pairing codes and revoke client tokens.
 - On Linux, you can run it as a user service:
 
 ```bash
 npx browser-bridge-cli server install-service --host 0.0.0.0 --port 52853 --token <server-token>
 ```
 
-Generate one pairing code for each client. Pairing codes are one-time-use and expire in 5 minutes:
+Generate one pairing code for each client. Pairing codes are one-time-use and expire in 5 minutes. This is a server-side operation; run it locally on Machine A and do not pass `--server`:
 
 ```bash
-npx browser-bridge-cli --server http://<server-ip>:52853 --token <server-token> server gen-pair
+npx browser-bridge-cli server gen-pair
 ```
 
 ### Machine B: Browser + Extension Client
@@ -141,7 +221,7 @@ Install or run the CLI on the command machine:
 npx browser-bridge-cli pair --server http://<server-ip>:52853 -n <cli-name>
 ```
 
-Enter a fresh pairing code generated on Machine A. The CLI stores its client token in `~/.browser-bridge/config.json`.
+Enter a fresh pairing code generated on Machine A. If the previous code was used by the extension, ask Machine A to run `npx browser-bridge-cli server gen-pair` locally again. The `--server` option is required because this command runs on the CLI machine and must choose the remote server. The CLI stores its client token in `~/.browser-bridge/config.json`.
 
 After that, commands can omit `--server` if the config was saved:
 
@@ -161,18 +241,20 @@ npx browser-bridge-cli --server http://<server-ip>:52853 tabs
 
 - Server token: admin credential for Machine A. It can generate pairing codes and revoke tokens.
 - Extension client token: stored by the browser extension after pairing. It lets the extension authenticate its WebSocket connection.
-- CLI client token: stored by Machine C after `pair --server`. It can execute browser commands but cannot generate pairing codes.
+- CLI client token: stored by Machine C after `pair --server`. It can execute browser commands but cannot generate pairing codes or manage the server.
 
-If you want to skip interactive CLI pairing, put a token in config or environment variables:
+If you want to skip interactive CLI pairing, put a CLI client token in config or environment variables. Do not use the server token on remote CLI machines:
 
 ```bash
 npx browser-bridge-cli config set server http://<server-ip>:52853
-npx browser-bridge-cli config set token <client-or-server-token>
+npx browser-bridge-cli config set token <client-token>
 
 # or
 export BROWSER_BRIDGE_URL=http://<server-ip>:52853
-export BROWSER_BRIDGE_TOKEN=<client-or-server-token>
+export BROWSER_BRIDGE_TOKEN=<client-token>
 ```
+
+</details>
 
 ## CLI Commands
 

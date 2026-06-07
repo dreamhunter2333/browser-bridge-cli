@@ -77,7 +77,87 @@ npx browser-bridge-cli server gen-pair
 # 4. 在扩展弹窗中输入 6 位配对码 → 点击 Pair
 ```
 
-## 三台机器部署
+## 部署拓扑
+
+规则：所有 `server ...` 命令都在 Bridge Server 所在机器上执行。Server 端命令会使用这台机器上的本地 state/config，所以不要给这些命令传 `--server`。远程 CLI 机器执行 `pair` 时必须使用 `--server http://<server-host>:52853` 来指定要连接的 Server。不要把 server token 复制到远程 CLI 机器。
+
+<details>
+<summary><strong>两台机器部署：Extension + Server 同机，CLI 远程</strong></summary>
+
+适用场景：Chrome/Edge 和 Bridge Server 在同一台机器上运行，CLI 命令从任意另一台机器发出。
+
+```mermaid
+graph LR
+    CLI["机器 B：CLI Client"]
+    Host["机器 A：浏览器主机"]
+    Bridge["Bridge Server"]
+    Ext["扩展 Client"]
+    Browser["Chrome/Edge"]
+
+    CLI -->|"HTTP API: http://HOST:52853 + token"| Bridge
+    Bridge -->|"WebSocket: ws://127.0.0.1:52853/ext"| Ext
+    Ext -->|"chrome.debugger / tabs"| Browser
+    Host --- Bridge
+    Host --- Ext
+    Host --- Browser
+```
+
+### 机器 A：浏览器主机
+
+安装扩展，并把 Bridge 启动在机器 B 可以访问到的地址上：
+
+```bash
+npx browser-bridge-cli server start --host 0.0.0.0 --port 52853 --token <server-token>
+```
+
+在扩展弹窗里：
+
+1. 打开扩展开关。
+2. 服务器 URL 保持为 `ws://127.0.0.1:52853/ext`，也可以用 `ws://localhost:52853/ext`。
+3. 在机器 A 上生成配对码。这是 Server 端操作，必须在机器 A 本地执行，不要传 `--server`：
+
+```bash
+npx browser-bridge-cli server gen-pair
+```
+
+4. 在扩展弹窗里输入 6 位配对码，然后点击 **Pair**。
+
+注意：
+
+- 机器 A 需要允许机器 B 访问 TCP `52853`。
+- `<server-token>` 应保留在机器 A。远程 CLI client 应通过配对拿自己的 client token。
+- 远程访问时尽量使用内网、VPN、SSH tunnel 或 HTTPS 反向代理。
+
+### 机器 B：远程 CLI Client
+
+让机器 A 的操作者在本机再次执行 `npx browser-bridge-cli server gen-pair`，因为配对码只能使用一次。然后把 CLI 配对到机器 A 上的服务器。这里必须传 `--server`，因为命令运行在远程 CLI 机器上：
+
+```bash
+npx browser-bridge-cli pair --server http://<browser-machine-ip>:52853 -n <cli-name>
+```
+
+输入机器 A 新生成的配对码。CLI 会把 token 保存到 `~/.browser-bridge/config.json`。
+
+之后从机器 B 运行命令：
+
+```bash
+npx browser-bridge-cli info
+npx browser-bridge-cli tabs
+npx browser-bridge-cli new-tab https://example.com
+```
+
+如果只想对单条命令显式传参：
+
+```bash
+npx browser-bridge-cli --server http://<browser-machine-ip>:52853 --token <client-token> tabs
+```
+
+不要在机器 B 上执行 `server start`、`server stop`、`server status`、`server gen-pair` 或 `server install-service`。这些命令都属于机器 A。
+
+</details>
+
+<details>
+<summary><strong>三台机器部署：Server、Extension、CLI 分别在不同机器</strong></summary>
 
 Browser Bridge 可以把三个角色分别放在三台机器上：
 
@@ -107,17 +187,17 @@ npx browser-bridge-cli server start --host 0.0.0.0 --port 52853 --token <server-
 
 - 防火墙或安全组需要放行 TCP `52853`。
 - 尽量使用 VPN、SSH tunnel、带 HTTPS 的反向代理或内网访问，不建议把未保护的端口直接暴露到公网。
-- 妥善保管 `<server-token>`。它可以生成配对码，也可以撤销 client token。
+- `<server-token>` 保留在机器 A。它可以生成配对码，也可以撤销 client token。
 - Linux 上可以安装为 user service：
 
 ```bash
 npx browser-bridge-cli server install-service --host 0.0.0.0 --port 52853 --token <server-token>
 ```
 
-每个 client 都需要单独生成一个配对码。配对码一次性使用，5 分钟过期：
+每个 client 都需要单独生成一个配对码。配对码一次性使用，5 分钟过期。这是 Server 端操作，必须在机器 A 本地执行，不要传 `--server`：
 
 ```bash
-npx browser-bridge-cli --server http://<server-ip>:52853 --token <server-token> server gen-pair
+npx browser-bridge-cli server gen-pair
 ```
 
 ### 机器 B：浏览器 + 扩展 Client
@@ -141,7 +221,7 @@ npx browser-bridge-cli --server http://<server-ip>:52853 --token <server-token> 
 npx browser-bridge-cli pair --server http://<server-ip>:52853 -n <cli-name>
 ```
 
-输入机器 A 新生成的配对码。CLI 会把 client token 保存到 `~/.browser-bridge/config.json`。
+输入机器 A 新生成的配对码。如果前一个配对码已经给扩展使用过，让机器 A 在本机再执行一次 `npx browser-bridge-cli server gen-pair`。这里必须传 `--server`，因为命令运行在 CLI 机器上，需要指定远程 Server。CLI 会把 client token 保存到 `~/.browser-bridge/config.json`。
 
 之后如果配置已保存，命令可以省略 `--server`：
 
@@ -161,18 +241,20 @@ npx browser-bridge-cli --server http://<server-ip>:52853 tabs
 
 - Server token：机器 A 的管理凭证，可以生成配对码和撤销 token。
 - 扩展 client token：扩展配对后保存，用于认证 WebSocket 连接。
-- CLI client token：机器 C 执行 `pair --server` 后保存，可以执行浏览器命令，但不能生成配对码。
+- CLI client token：机器 C 执行 `pair --server` 后保存，可以执行浏览器命令，但不能生成配对码或管理 server。
 
-如果不想交互式配对 CLI，也可以直接写入配置或环境变量：
+如果不想交互式配对 CLI，也可以把 CLI client token 写入配置或环境变量。不要在远程 CLI 机器使用 server token：
 
 ```bash
 npx browser-bridge-cli config set server http://<server-ip>:52853
-npx browser-bridge-cli config set token <client-or-server-token>
+npx browser-bridge-cli config set token <client-token>
 
 # 或者
 export BROWSER_BRIDGE_URL=http://<server-ip>:52853
-export BROWSER_BRIDGE_TOKEN=<client-or-server-token>
+export BROWSER_BRIDGE_TOKEN=<client-token>
 ```
+
+</details>
 
 ## 命令列表
 
