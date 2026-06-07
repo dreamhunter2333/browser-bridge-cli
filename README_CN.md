@@ -56,11 +56,16 @@ bunx browser-bridge-cli info
 
 ### 2. 加载浏览器扩展
 
-从 [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases) 下载扩展 zip 包，或使用源码中的 `extension/` 目录。
+从 [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases) 下载扩展文件：
+
+- `.zip`：解压后通过 **加载已解压的扩展** 加载目录。
+- `.crx`：如果浏览器允许本地 CRX 安装，可以拖到 `chrome://extensions` 页面安装。
+
+也可以直接使用源码中的 `extension/` 目录。
 
 1. 打开 Chrome/Edge -> `chrome://extensions`
 2. 开启 **开发者模式**
-3. 点击 **加载已解压的扩展** -> 选择解压后的扩展目录
+3. 如果使用 ZIP 或源码，点击 **加载已解压的扩展** -> 选择扩展目录
 
 ### 3. 启动 Server 并配对扩展
 

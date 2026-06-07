@@ -56,11 +56,16 @@ bunx browser-bridge-cli info
 
 ### 2. Load browser extension
 
-Download the extension zip from [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases), or use the `extension/` directory from the source code.
+Download the extension asset from [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases):
+
+- `.zip`: unzip it and load the folder with **Load unpacked**.
+- `.crx`: drag it onto `chrome://extensions` if your browser allows local CRX installs.
+
+You can also use the `extension/` directory from the source code.
 
 1. Open Chrome/Edge -> `chrome://extensions`
 2. Enable **Developer mode**
-3. Click **Load unpacked** -> select the unzipped extension directory
+3. For ZIP/source installs, click **Load unpacked** -> select the extension directory
 
 ### 3. Start server and pair extension
 
