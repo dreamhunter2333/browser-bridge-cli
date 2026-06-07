@@ -6,28 +6,15 @@
 
 ```mermaid
 graph LR
-    CLI["CLI (TypeScript)"]
+    CLI["CLI Client"]
     Bridge["Bridge 服务器 (:52853)"]
-    Ext["扩展 (Service Worker)"]
+    Ext["扩展 Client"]
 
     CLI -->|"HTTP + token"| Bridge
     Bridge -->|"WebSocket"| Ext
 ```
 
-## 安装
-
-```bash
-# 全局安装
-npm i -g browser-bridge-cli
-
-# 或直接使用（无需安装）
-npx browser-bridge-cli info
-
-# 或使用 Bun
-bunx browser-bridge-cli info
-```
-
-### 安装为 AI Agent Skill
+## AI Agent Skill
 
 ```bash
 # 安装到 Claude Code
@@ -40,49 +27,67 @@ npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code code
 npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code -g
 ```
 
-## 前置要求
+## 单机快速开始
 
-- Node.js >= 20 或 [Bun](https://bun.sh/) >= 1.0
-- Chrome 或 Edge 浏览器
+这是默认部署：CLI、Bridge Server、浏览器和扩展都在同一台机器上运行。
 
-## 平台支持
+```mermaid
+graph LR
+    CLI["本机 CLI Client"]
+    Bridge["本机 Bridge Server"]
+    Ext["本机扩展 Client"]
 
-- Windows、macOS、Linux 均支持常规 CLI 使用，包括 `server start`、`server stop`、`server status`、配对、标签页控制、截图、PDF 导出、网络日志、Cookie 和原始 CDP 命令。
-- `server install-service` 仅支持 Linux，因为它安装的是 systemd user service。Windows 和 macOS 请使用 `server start` 启动 bridge。
-- CI 会在 `ubuntu-latest` 和 `windows-latest` 上运行构建与 e2e 测试。
+    CLI -->|"http://127.0.0.1:52853 + local token"| Bridge
+    Bridge -->|"ws://127.0.0.1:52853/ext"| Ext
+```
 
-## 配置
+### 1. 安装
 
-### 1. 加载浏览器扩展
+```bash
+# 全局安装
+npm i -g browser-bridge-cli
+
+# 或直接使用
+npx browser-bridge-cli info
+
+# 或使用 Bun
+bunx browser-bridge-cli info
+```
+
+### 2. 加载浏览器扩展
 
 从 [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases) 下载扩展 zip 包，或使用源码中的 `extension/` 目录。
 
-1. 打开 Chrome/Edge → `chrome://extensions`
+1. 打开 Chrome/Edge -> `chrome://extensions`
 2. 开启 **开发者模式**
-3. 点击 **加载已解压的扩展** → 选择解压后的扩展目录
+3. 点击 **加载已解压的扩展** -> 选择解压后的扩展目录
 
-### 2. 启动服务器 + 配对
+### 3. 启动 Server 并配对扩展
 
 ```bash
-# 1. 启动服务器
 npx browser-bridge-cli server start
-
-# 2. 打开扩展弹窗 → 开启开关 →（可选：设置服务器 URL）
-
-# 3. 生成配对码
 npx browser-bridge-cli server gen-pair
-
-# 4. 在扩展弹窗中输入 6 位配对码 → 点击 Pair
 ```
 
-## 部署拓扑
+打开扩展弹窗，打开开关，保持 `ws://127.0.0.1:52853/ext`，输入 6 位配对码，然后点击 **Pair**。
 
-规则：所有 `server ...` 命令都在 Bridge Server 所在机器上执行。Server 端命令会使用这台机器上的本地 state/config，所以不要给这些命令传 `--server`。远程 CLI 机器执行 `pair` 时必须使用 `--server http://<server-host>:52853` 来指定要连接的 Server。不要把 server token 复制到远程 CLI 机器。
+### 4. 验证
+
+```bash
+npx browser-bridge-cli info
+npx browser-bridge-cli tabs
+```
+
+本机 CLI 命令不需要 `--server`。CLI 会从 `~/.browser-bridge/` 读取本机 server state，Server 默认绑定 `127.0.0.1`。
+
+## 高级部署
+
+当 CLI 不在扩展和/或 Bridge Server 所在机器上时，使用下面的高级部署方式。
 
 <details>
-<summary><strong>两台机器部署：Extension + Server 同机，CLI 远程</strong></summary>
+<summary><strong>两台机器：Server + Extension 同机，CLI 远程</strong></summary>
 
-适用场景：Chrome/Edge 和 Bridge Server 在同一台机器上运行，CLI 命令从任意另一台机器发出。
+适用于浏览器和扩展在一台机器上运行，命令从另一台机器发出的场景。
 
 ```mermaid
 graph LR
@@ -90,47 +95,36 @@ graph LR
     Bridge["机器 A：Bridge Server"]
     Ext["机器 A：扩展 Client"]
 
-    CLI -->|"HTTP API: http://HOST:52853 + token"| Bridge
-    Bridge -->|"WebSocket: ws://127.0.0.1:52853/ext"| Ext
+    CLI -->|"http://<browser-machine-ip>:52853 + client token"| Bridge
+    Bridge -->|"ws://127.0.0.1:52853/ext"| Ext
 ```
 
-### 机器 A：浏览器主机
-
-安装扩展，并把 Bridge 启动在机器 B 可以访问到的地址上：
+在机器 A 上，把 Server 启动在机器 B 可以访问到的地址上：
 
 ```bash
 npx browser-bridge-cli server start --host 0.0.0.0 --port 52853 --token <server-token>
+npx browser-bridge-cli server gen-pair
 ```
 
-在扩展弹窗里：
+在机器 A 的扩展弹窗里：
 
 1. 打开扩展开关。
-2. 服务器 URL 保持为 `ws://127.0.0.1:52853/ext`，也可以用 `ws://localhost:52853/ext`。
-3. 在机器 A 上生成配对码。这是 Server 端操作，必须在机器 A 本地执行，不要传 `--server`：
+2. 服务器 URL 保持为 `ws://127.0.0.1:52853/ext`。
+3. 输入 6 位配对码并点击 **Pair**。
+
+在机器 A 上为远程 CLI 生成新的配对码：
 
 ```bash
 npx browser-bridge-cli server gen-pair
 ```
 
-4. 在扩展弹窗里输入 6 位配对码，然后点击 **Pair**。
-
-注意：
-
-- 机器 A 需要允许机器 B 访问 TCP `52853`。
-- `<server-token>` 应保留在机器 A。远程 CLI client 应通过配对拿自己的 client token。
-- 远程访问时尽量使用内网、VPN、SSH tunnel 或 HTTPS 反向代理。
-
-### 机器 B：远程 CLI Client
-
-让机器 A 的操作者在本机再次执行 `npx browser-bridge-cli server gen-pair`，因为配对码只能使用一次。然后把 CLI 配对到机器 A 上的服务器。这里必须传 `--server`，因为命令运行在远程 CLI 机器上：
+在机器 B 上配对机器 A：
 
 ```bash
 npx browser-bridge-cli pair --server http://<browser-machine-ip>:52853 -n <cli-name>
 ```
 
-输入机器 A 新生成的配对码。CLI 会把 token 保存到 `~/.browser-bridge/config.json`。
-
-之后从机器 B 运行命令：
+然后从机器 B 执行命令：
 
 ```bash
 npx browser-bridge-cli info
@@ -138,20 +132,18 @@ npx browser-bridge-cli tabs
 npx browser-bridge-cli new-tab https://example.com
 ```
 
-如果只想对单条命令显式传参：
+注意：
 
-```bash
-npx browser-bridge-cli --server http://<browser-machine-ip>:52853 --token <client-token> tabs
-```
-
-不要在机器 B 上执行 `server start`、`server stop`、`server status`、`server gen-pair` 或 `server install-service`。这些命令都属于机器 A。
+- 机器 A 需要允许机器 B 访问 TCP `52853`。
+- 配对码只能使用一次，5 分钟过期。
+- 不要在机器 B 上执行 `server ...` 命令。
 
 </details>
 
 <details>
-<summary><strong>三台机器部署：Server、Extension、CLI 分别在不同机器</strong></summary>
+<summary><strong>三台机器：Server、Extension、CLI 分离</strong></summary>
 
-Browser Bridge 可以把三个角色分别放在三台机器上：
+适用于 Bridge Server、浏览器扩展、CLI 分别运行在不同机器上的场景。
 
 ```mermaid
 graph LR
@@ -159,61 +151,37 @@ graph LR
     Bridge["机器 A：Bridge Server"]
     Ext["机器 B：扩展 Client"]
 
-    CLI -->|"HTTP API: http://SERVER:52853 + token"| Bridge
-    Ext -->|"WebSocket: ws://SERVER:52853/ext"| Bridge
+    CLI -->|"http://<server-ip>:52853 + client token"| Bridge
+    Ext -->|"ws://<server-ip>:52853/ext"| Bridge
 ```
 
-适用场景：浏览器开在一台机器上，长期运行的 Bridge Server 放在另一台机器上，命令从第三台机器发出。
-
-### 机器 A：Bridge Server
-
-把服务器启动在另外两台机器能访问到的地址上：
+在机器 A 上启动 Server：
 
 ```bash
 npx browser-bridge-cli server start --host 0.0.0.0 --port 52853 --token <server-token>
+npx browser-bridge-cli server gen-pair
 ```
 
-注意：
+在机器 B 上加载扩展并配对：
 
-- 防火墙或安全组需要放行 TCP `52853`。
-- 尽量使用 VPN、SSH tunnel、带 HTTPS 的反向代理或内网访问，不建议把未保护的端口直接暴露到公网。
-- `<server-token>` 保留在机器 A。它可以生成配对码，也可以撤销 client token。
-- Linux 上可以安装为 user service：
+1. 打开扩展开关。
+2. 把服务器 URL 设置为 `ws://<server-ip>:52853/ext`。
+3. 输入机器 A 生成的 6 位配对码。
+4. 点击 **Pair**。
 
-```bash
-npx browser-bridge-cli server install-service --host 0.0.0.0 --port 52853 --token <server-token>
-```
-
-每个 client 都需要单独生成一个配对码。配对码一次性使用，5 分钟过期。这是 Server 端操作，必须在机器 A 本地执行，不要传 `--server`：
+在机器 A 上为 CLI 生成新的配对码：
 
 ```bash
 npx browser-bridge-cli server gen-pair
 ```
 
-### 机器 B：浏览器 + 扩展 Client
-
-在运行 Chrome/Edge 的机器上安装并加载扩展。
-
-在扩展弹窗里：
-
-1. 打开扩展开关。
-2. 把服务器 URL 设置为 `ws://<server-ip>:52853/ext`。
-3. 输入机器 A 生成的配对码。
-4. 点击 **Pair**。
-
-配对后，这台机器会保持到机器 A 的 WebSocket 连接。浏览器所在机器不需要运行 CLI。
-
-### 机器 C：CLI Client
-
-在发命令的机器上安装或直接运行 CLI：
+在机器 C 上配对机器 A：
 
 ```bash
 npx browser-bridge-cli pair --server http://<server-ip>:52853 -n <cli-name>
 ```
 
-输入机器 A 新生成的配对码。如果前一个配对码已经给扩展使用过，让机器 A 在本机再执行一次 `npx browser-bridge-cli server gen-pair`。这里必须传 `--server`，因为命令运行在 CLI 机器上，需要指定远程 Server。CLI 会把 client token 保存到 `~/.browser-bridge/config.json`。
-
-之后如果配置已保存，命令可以省略 `--server`：
+然后从机器 C 执行命令：
 
 ```bash
 npx browser-bridge-cli info
@@ -221,30 +189,29 @@ npx browser-bridge-cli tabs
 npx browser-bridge-cli new-tab https://example.com
 ```
 
-也可以只在单条命令里显式指定服务器：
+注意：
 
-```bash
-npx browser-bridge-cli --server http://<server-ip>:52853 tabs
-```
-
-### Token 模型
-
-- Server token：机器 A 的管理凭证，可以生成配对码和撤销 token。
-- 扩展 client token：扩展配对后保存，用于认证 WebSocket 连接。
-- CLI client token：机器 C 执行 `pair --server` 后保存，可以执行浏览器命令，但不能生成配对码或管理 server。
-
-如果不想交互式配对 CLI，也可以把 CLI client token 写入配置或环境变量。不要在远程 CLI 机器使用 server token：
-
-```bash
-npx browser-bridge-cli config set server http://<server-ip>:52853
-npx browser-bridge-cli config set token <client-token>
-
-# 或者
-export BROWSER_BRIDGE_URL=http://<server-ip>:52853
-export BROWSER_BRIDGE_TOKEN=<client-token>
-```
+- 机器 A 需要允许机器 B 和机器 C 访问 TCP `52853`。
+- 尽量使用内网、VPN、SSH tunnel 或 HTTPS 反向代理。
+- `<server-token>` 只保留在机器 A。
 
 </details>
+
+## 命令规则
+
+- `server ...` 命令只在 Bridge Server 所在机器执行。
+- 不要给 `server ...` 命令传 `--server`。
+- 远程 CLI 机器执行 `pair` 时必须带 `--server http://<server-host>:52853`。
+- 远程 CLI 配对后，普通浏览器控制命令可以通过保存的配置省略 `--server`。
+- 单条远程命令可以传 `--server http://<server-host>:52853 --token <client-token>`。
+
+## Token 模型
+
+- Server token：Bridge Server 机器上的管理凭证，可以生成配对码和撤销 client token。
+- 扩展 client token：扩展配对后保存，用于认证扩展 WebSocket。
+- CLI client token：远程 CLI 机器执行 `pair --server` 后保存，可以执行浏览器命令，但不能生成配对码或管理 server。
+
+配对码只能使用一次，5 分钟过期。每个 client 都需要单独生成一个配对码。
 
 ## 命令列表
 
@@ -259,9 +226,9 @@ npx browser-bridge-cli server gen-pair
 npx browser-bridge-cli server install-service [--uninstall]   # systemd 守护进程 (Linux)
 
 # 配对
-npx browser-bridge-cli pair [-n name]               # 本地：生成配对码给扩展
-npx browser-bridge-cli pair --server http://remote   # 远程：输入配对码连接 CLI
-npx browser-bridge-cli unpair                        # 撤销凭证
+npx browser-bridge-cli pair [-n name]                  # 本机快捷方式：生成扩展配对码
+npx browser-bridge-cli pair --server http://remote     # 远程 CLI：输入 Server 生成的配对码
+npx browser-bridge-cli unpair                          # 撤销凭证
 
 # 配置
 npx browser-bridge-cli config get                    # 查看配置（token 已脱敏）
@@ -294,6 +261,12 @@ npx browser-bridge-cli switch <clientId>             # 切换活跃客户端
 
 配置优先级：CLI 参数 > 环境变量 (`BROWSER_BRIDGE_URL`, `BROWSER_BRIDGE_TOKEN`) > `~/.browser-bridge/config.json` > `~/.browser-bridge/state.json`
 
+## 平台支持
+
+- Windows、macOS、Linux 均支持常规 CLI 使用。
+- `server install-service` 仅支持 Linux，因为它安装的是 systemd user service。
+- CI 会在 `ubuntu-latest` 和 `windows-latest` 上运行构建与 e2e 测试。
+
 ## 开发
 
 ```bash
@@ -306,13 +279,13 @@ bun run test                 # 运行 Playwright e2e 测试
 
 ## 安全
 
-- Bridge 默认绑定 `127.0.0.1`
-- 服务器 token 控制管理操作（生成配对码、撤销 token）
-- 客户端 token 可执行浏览器命令，但不能生成配对码
-- 配对接口有速率限制（HTTP: 5次/分钟/IP，WS: 5次失败/连接）
-- 配对码一次性使用，5 分钟过期
-- token 撤销会断开 WS 客户端
-- 白名单限制按 URL 模式的标签页操作
+- Bridge 默认绑定 `127.0.0.1`。
+- Server token 控制管理操作。
+- Client token 可执行浏览器命令，但不能生成配对码。
+- 配对接口有速率限制：HTTP 5次/分钟/IP，WS 每连接 5 次失败。
+- 配对码只能使用一次，5 分钟过期。
+- token 撤销会断开 WebSocket client。
+- 白名单限制按 URL 模式的标签页操作。
 
 ## 许可证
 
