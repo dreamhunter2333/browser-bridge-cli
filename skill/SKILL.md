@@ -66,6 +66,8 @@ npx browser-bridge-cli navigate "https://example.com" -t <tab-id>
 # Screenshot
 npx browser-bridge-cli screenshot -o page.png -t <tab-id>
 npx browser-bridge-cli screenshot -f -o full.png -t <tab-id>
+npx browser-bridge-cli screenshot --long --max-height 12000 -o long.png -t <tab-id>
+npx browser-bridge-cli screenshot --long --hide-sticky -o long.png -t <tab-id>
 
 # PDF export
 npx browser-bridge-cli pdf -o page.pdf -t <tab-id>

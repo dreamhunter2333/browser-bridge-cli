@@ -59,13 +59,12 @@ bunx browser-bridge-cli info
 Download the extension asset from [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases):
 
 - `.zip`: unzip it and load the folder with **Load unpacked**.
-- `.crx`: drag it onto `chrome://extensions` if your browser allows local CRX installs.
 
 You can also use the `extension/` directory from the source code.
 
 1. Open Chrome/Edge -> `chrome://extensions`
 2. Enable **Developer mode**
-3. For ZIP/source installs, click **Load unpacked** -> select the extension directory
+3. Click **Load unpacked** -> select the extension directory
 
 ### 3. Start server and pair extension
 
@@ -256,7 +255,7 @@ npx browser-bridge-cli close-tab <id>                # Close tab
 npx browser-bridge-cli activate <id>                 # Switch tab
 npx browser-bridge-cli navigate <url> [-t id]        # Navigate
 npx browser-bridge-cli reload [-t id] [--no-cache]   # Reload
-npx browser-bridge-cli screenshot [-o file] [-f]     # Screenshot
+npx browser-bridge-cli screenshot [-o file] [-f] [--long --max-height px --hide-sticky] [--x px --y px --width px --height px] # Screenshot
 npx browser-bridge-cli pdf [-o file] [-t id]         # PDF export
 npx browser-bridge-cli network [-l limit] [--clear]  # Network log
 npx browser-bridge-cli cookies [-u url] [-d domain]  # Cookies
@@ -264,6 +263,14 @@ npx browser-bridge-cli cdp <method> [params] [-t id] # Raw CDP command
 npx browser-bridge-cli detach [-t id]                # Detach debugger
 npx browser-bridge-cli clients                       # List clients
 npx browser-bridge-cli switch <clientId>             # Switch active client
+```
+
+Long screenshots use the current viewport width and adapt height from the page. The default maximum height is `30000`; use `--max-height` to cap pages with very large or infinite scroll content. Fixed elements are hidden after the first slice to avoid repeated headers; sticky elements are preserved by default and can be hidden with `--hide-sticky`.
+
+```bash
+npx browser-bridge-cli screenshot --long -o page.png
+npx browser-bridge-cli screenshot --long --max-height 12000 -o page.png
+npx browser-bridge-cli screenshot --long --hide-sticky -o page.png
 ```
 
 Global options: `-s, --server <url>`, `--token <token>`

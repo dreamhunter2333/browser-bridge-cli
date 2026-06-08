@@ -59,13 +59,12 @@ bunx browser-bridge-cli info
 从 [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases) 下载扩展文件：
 
 - `.zip`：解压后通过 **加载已解压的扩展** 加载目录。
-- `.crx`：如果浏览器允许本地 CRX 安装，可以拖到 `chrome://extensions` 页面安装。
 
 也可以直接使用源码中的 `extension/` 目录。
 
 1. 打开 Chrome/Edge -> `chrome://extensions`
 2. 开启 **开发者模式**
-3. 如果使用 ZIP 或源码，点击 **加载已解压的扩展** -> 选择扩展目录
+3. 点击 **加载已解压的扩展** -> 选择扩展目录
 
 ### 3. 启动 Server 并配对扩展
 
@@ -256,7 +255,7 @@ npx browser-bridge-cli close-tab <id>                # 关闭标签页
 npx browser-bridge-cli activate <id>                 # 切换标签页
 npx browser-bridge-cli navigate <url> [-t id]        # 导航
 npx browser-bridge-cli reload [-t id] [--no-cache]   # 刷新
-npx browser-bridge-cli screenshot [-o file] [-f]     # 截图
+npx browser-bridge-cli screenshot [-o file] [-f] [--long --max-height px --hide-sticky] [--x px --y px --width px --height px] # 截图
 npx browser-bridge-cli pdf [-o file] [-t id]         # 导出 PDF
 npx browser-bridge-cli network [-l limit] [--clear]  # 网络日志
 npx browser-bridge-cli cookies [-u url] [-d domain]  # Cookie
@@ -264,6 +263,14 @@ npx browser-bridge-cli cdp <method> [params] [-t id] # 原始 CDP 命令
 npx browser-bridge-cli detach [-t id]                # 分离调试器
 npx browser-bridge-cli clients                       # 客户端列表
 npx browser-bridge-cli switch <clientId>             # 切换活跃客户端
+```
+
+长截图会使用当前视口宽度，并根据页面高度自适应截图高度。默认最大高度是 `30000`；遇到超高页面或无限滚动页面时，用 `--max-height` 控制上限。为避免重复页头，第一张之后会隐藏 fixed 元素；sticky 元素默认保留，需要时可用 `--hide-sticky` 隐藏。
+
+```bash
+npx browser-bridge-cli screenshot --long -o page.png
+npx browser-bridge-cli screenshot --long --max-height 12000 -o page.png
+npx browser-bridge-cli screenshot --long --hide-sticky -o page.png
 ```
 
 全局选项：`-s, --server <url>`、`--token <token>`

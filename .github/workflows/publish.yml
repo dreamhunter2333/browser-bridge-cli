@@ -31,29 +31,6 @@ jobs:
           zip -r ../browser-bridge-extension-${{ github.ref_name }}.zip .
           cd ..
 
-      - name: Package extension CRX
-        env:
-          CHROME_EXTENSION_KEY_B64: ${{ secrets.CHROME_EXTENSION_KEY_B64 }}
-        run: |
-          set -euo pipefail
-
-          CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable || command -v chromium || true)"
-          if [ -z "$CHROME_BIN" ]; then
-            echo "Chrome/Chromium is required to package a CRX." >&2
-            exit 1
-          fi
-
-          KEY_ARG=()
-          if [ -n "${CHROME_EXTENSION_KEY_B64:-}" ]; then
-            echo "$CHROME_EXTENSION_KEY_B64" | base64 -d > extension-key.pem
-            KEY_ARG=(--pack-extension-key="$PWD/extension-key.pem")
-          else
-            echo "::warning::CHROME_EXTENSION_KEY_B64 is not set. Chrome will generate a temporary key, so the CRX extension ID may change between releases."
-          fi
-
-          "$CHROME_BIN" --no-sandbox --pack-extension="$PWD/extension" "${KEY_ARG[@]}"
-          mv extension.crx browser-bridge-extension-${{ github.ref_name }}.crx
-
       - run: npm publish
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -63,5 +40,4 @@ jobs:
         with:
           files: |
             browser-bridge-extension-${{ github.ref_name }}.zip
-            browser-bridge-extension-${{ github.ref_name }}.crx
           generate_release_notes: true

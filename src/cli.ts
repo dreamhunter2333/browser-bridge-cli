@@ -7,6 +7,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as readline from 'node:readline';
+import { PNG } from 'pngjs';
 
 function out(data: unknown) {
   console.log(typeof data === 'string' ? data : JSON.stringify(data, null, 2));
@@ -32,6 +33,346 @@ function readPackageVersion(): string {
     return '0.0.0';
   } catch {
     return '0.0.0';
+  }
+}
+
+type ScreenshotClipOptions = {
+  x?: number | string;
+  y?: number | string;
+  width?: number | string;
+  height?: number | string;
+  maxHeight?: number | string;
+  long?: boolean;
+  hideSticky?: boolean;
+  tab?: number;
+};
+
+type RuntimeEvalResult = {
+  result?: { value?: unknown };
+  exceptionDetails?: {
+    exception?: { description?: string };
+    text?: string;
+  };
+};
+
+type PageMetrics = {
+  scrollX: number;
+  scrollY: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  scrollWidth: number;
+  scrollHeight: number;
+};
+
+type PngImage = PNG & { data: Buffer };
+
+function assertValidClip(x: number, y: number, width: number, height: number) {
+  if (x < 0 || y < 0) throw new Error(`Invalid screenshot clip origin: ${x},${y}`);
+  if (width <= 0 || height <= 0) throw new Error(`Invalid screenshot clip size: ${width}x${height}`);
+}
+
+function readOptionalPixel(value: number | string | undefined, name: string): number | undefined {
+  if (value == null) return undefined;
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) throw new Error(`Invalid ${name}: ${value}`);
+  return Math.ceil(numberValue);
+}
+
+async function sendCdp(tabId: number | undefined, method: string, params: Record<string, unknown> = {}) {
+  return await request('cdp', { tabId, method, params, keepAttached: true });
+}
+
+async function detachCdp(tabId: number | undefined) {
+  await request('cdp.detach', { tabId }).catch(() => {});
+}
+
+async function evaluateCdpExpression(
+  expression: string,
+  opts: { tab?: number; keepAttached?: boolean } = {}
+): Promise<unknown> {
+  try {
+    const result = await sendCdp(opts.tab, 'Runtime.evaluate', {
+      expression,
+      returnByValue: true,
+      awaitPromise: true,
+    }) as RuntimeEvalResult;
+
+    if (result.exceptionDetails) {
+      const error = result.exceptionDetails.exception?.description
+        || result.exceptionDetails.text
+        || 'Eval error';
+      throw new Error(error);
+    }
+
+    return result.result?.value;
+  } finally {
+    if (opts.keepAttached !== true) await detachCdp(opts.tab);
+  }
+}
+
+async function getPageMetrics(tabId: number | undefined): Promise<PageMetrics> {
+  const value = await evaluateCdpExpression(`JSON.stringify((() => {
+    const doc = document.documentElement;
+    const body = document.body;
+    return {
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      scrollWidth: Math.max(doc.scrollWidth, body?.scrollWidth || 0, window.innerWidth),
+      scrollHeight: Math.max(doc.scrollHeight, body?.scrollHeight || 0, window.innerHeight),
+    };
+  })())`, { tab: tabId, keepAttached: true });
+
+  if (typeof value !== 'string') throw new Error('Failed to read page metrics');
+  return JSON.parse(value) as PageMetrics;
+}
+
+function buildQueryExpression(selector: string, limit?: number): string {
+  const safeLimit = Number.isFinite(limit) ? limit as number : 50;
+  return `JSON.parse(JSON.stringify((() => {
+    const els = document.querySelectorAll(${JSON.stringify(selector)});
+    const out = [];
+    const limit = ${safeLimit};
+    for (let i = 0; i < Math.min(els.length, limit); i++) {
+      const el = els[i];
+      out.push({
+        tag: el.tagName.toLowerCase(),
+        id: el.id || undefined,
+        className: el.className || undefined,
+        text: el.textContent?.slice(0, 200),
+        href: el.href || undefined,
+        src: el.src || undefined,
+        rect: el.getBoundingClientRect().toJSON(),
+      });
+    }
+    return out;
+  })()))`;
+}
+
+async function printCdpPdf(tabId: number | undefined): Promise<string> {
+  try {
+    const result = await sendCdp(tabId, 'Page.printToPDF', { printBackground: true }) as { data: string };
+    return result.data;
+  } finally {
+    await detachCdp(tabId);
+  }
+}
+
+async function captureCdpViewport(tabId: number | undefined): Promise<string> {
+  try {
+    const result = await sendCdp(tabId, 'Page.captureScreenshot', { format: 'png' }) as { data: string };
+    return result.data;
+  } finally {
+    await detachCdp(tabId);
+  }
+}
+
+function decodePng(base64: string): PngImage {
+  return PNG.sync.read(Buffer.from(base64, 'base64')) as PngImage;
+}
+
+function copyPngRows(source: PngImage, target: PngImage, targetY: number, sourceY: number, height: number) {
+  const rowBytes = source.width * 4;
+  for (let row = 0; row < height; row++) {
+    const sourceStart = (sourceY + row) * rowBytes;
+    const targetStart = (targetY + row) * rowBytes;
+    source.data.copy(target.data, targetStart, sourceStart, sourceStart + rowBytes);
+  }
+}
+
+async function setViewport(tabId: number | undefined, width: number, height: number) {
+  await sendCdp(tabId, 'Emulation.setDeviceMetricsOverride', {
+    width,
+    height,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+}
+
+async function scrollToAndWait(tabId: number | undefined, x: number, y: number) {
+  await sendCdp(tabId, 'Runtime.evaluate', {
+    expression: `new Promise(resolve => {
+      window.scrollTo(${x}, ${y});
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    })`,
+    awaitPromise: true,
+  });
+}
+
+async function installLongScreenshotStyle(tabId: number | undefined) {
+  await sendCdp(tabId, 'Runtime.evaluate', {
+    expression: `(() => {
+      document.documentElement.setAttribute('data-browser-bridge-long-active', '1');
+      const styleId = 'browser-bridge-long-screenshot-style';
+      if (document.getElementById(styleId)) return;
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = [
+        'html[data-browser-bridge-long-active="1"], html[data-browser-bridge-long-active="1"] body { scrollbar-width: none !important; -ms-overflow-style: none !important; }',
+        'html[data-browser-bridge-long-active="1"]::-webkit-scrollbar, html[data-browser-bridge-long-active="1"] *::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }',
+        '[data-browser-bridge-long-hidden="1"] { visibility: hidden !important; }',
+      ].join('\\n');
+      document.documentElement.appendChild(style);
+    })()`,
+  });
+}
+
+async function hideLongScreenshotRepeatingElements(tabId: number | undefined, hideSticky: boolean) {
+  await sendCdp(tabId, 'Runtime.evaluate', {
+    expression: `(() => {
+      const valueKey = 'browserBridgeLongOriginalVisibility';
+      const priorityKey = 'browserBridgeLongOriginalVisibilityPriority';
+      for (const el of document.querySelectorAll('*')) {
+        const position = getComputedStyle(el).position;
+        if (position !== 'fixed' && !(position === 'sticky' && ${hideSticky})) continue;
+        if (!(valueKey in el.dataset)) {
+          el.dataset[valueKey] = el.style.getPropertyValue('visibility') || '';
+          el.dataset[priorityKey] = el.style.getPropertyPriority('visibility') || '';
+        }
+        el.setAttribute('data-browser-bridge-long-hidden', '1');
+        el.style.setProperty('visibility', 'hidden', 'important');
+      }
+    })()`,
+  });
+}
+
+async function restoreLongScreenshotRepeatingElements(tabId: number | undefined) {
+  await sendCdp(tabId, 'Runtime.evaluate', {
+    expression: `(() => {
+      document.getElementById('browser-bridge-long-screenshot-style')?.remove();
+      document.documentElement.removeAttribute('data-browser-bridge-long-active');
+      const valueKey = 'browserBridgeLongOriginalVisibility';
+      const priorityKey = 'browserBridgeLongOriginalVisibilityPriority';
+      for (const el of document.querySelectorAll('[data-browser-bridge-long-hidden="1"]')) {
+        const value = el.dataset[valueKey] || '';
+        const priority = el.dataset[priorityKey] || '';
+        if (value) el.style.setProperty('visibility', value, priority);
+        else el.style.removeProperty('visibility');
+        delete el.dataset[valueKey];
+        delete el.dataset[priorityKey];
+        el.removeAttribute('data-browser-bridge-long-hidden');
+      }
+    })()`,
+  }).catch(() => {});
+}
+
+async function captureCdpLong(opts: ScreenshotClipOptions): Promise<Buffer> {
+  let originalScroll = { x: 0, y: 0 };
+  const slices: Array<{ png: PngImage; sourceY: number; height: number }> = [];
+
+  try {
+    const originalMetrics = await getPageMetrics(opts.tab);
+    const requestedX = readOptionalPixel(opts.x, 'x');
+    const requestedY = readOptionalPixel(opts.y, 'y');
+    const requestedWidth = readOptionalPixel(opts.width, 'width');
+    const requestedMaxHeight = readOptionalPixel(opts.maxHeight, 'max-height') ?? 30000;
+    const requestedHeight = readOptionalPixel(opts.height, 'height');
+    const x = requestedX ?? 0;
+    const y = requestedY ?? 0;
+    const width = requestedWidth ?? originalMetrics.viewportWidth;
+    assertValidClip(x, y, width, 1);
+
+    originalScroll = { x: originalMetrics.scrollX, y: originalMetrics.scrollY };
+    await setViewport(opts.tab, width, originalMetrics.viewportHeight);
+    await installLongScreenshotStyle(opts.tab);
+
+    const metrics = await getPageMetrics(opts.tab);
+    const pageHeight = Math.max(0, metrics.scrollHeight - y);
+    const clipHeight = Math.min(pageHeight, requestedHeight ?? pageHeight);
+    const height = Math.min(clipHeight, requestedMaxHeight);
+    assertValidClip(x, y, width, height);
+    if (clipHeight > height) {
+      console.error(`Long screenshot limited to ${height}px; requested height from y=${y} is ${clipHeight}px.`);
+    }
+
+    let capturedCssHeight = 0;
+    let outputWidth = 0;
+    let outputHeight = 0;
+    let deviceScale = 1;
+    const maxPageScrollY = Math.max(0, metrics.scrollHeight - metrics.viewportHeight);
+    const maxClipScrollY = y + Math.max(0, height - metrics.viewportHeight);
+
+    while (capturedCssHeight < height) {
+      const remainingCssHeight = height - capturedCssHeight;
+      const targetCssY = y + capturedCssHeight;
+      const scrollY = Math.min(targetCssY, maxClipScrollY, maxPageScrollY);
+      const sourceCssY = targetCssY - scrollY;
+
+      await scrollToAndWait(opts.tab, x, scrollY);
+      if (slices.length > 0) await hideLongScreenshotRepeatingElements(opts.tab, opts.hideSticky === true);
+
+      const result = await sendCdp(opts.tab, 'Page.captureScreenshot', { format: 'png' }) as { data: string };
+      const png = decodePng(result.data);
+      if (slices.length === 0) {
+        outputWidth = png.width;
+        deviceScale = png.height / metrics.viewportHeight;
+      } else if (png.width !== outputWidth) {
+        throw new Error(`Long screenshot slice width changed: ${outputWidth} -> ${png.width}`);
+      }
+
+      const sliceCssHeight = Math.min(metrics.viewportHeight - sourceCssY, remainingCssHeight);
+      const sourcePixelY = Math.max(0, Math.round(sourceCssY * deviceScale));
+      const slicePixelHeight = Math.min(png.height - sourcePixelY, Math.ceil(sliceCssHeight * deviceScale));
+      slices.push({ png, sourceY: sourcePixelY, height: slicePixelHeight });
+      outputHeight += slicePixelHeight;
+      capturedCssHeight += sliceCssHeight;
+    }
+
+    const stitched = new PNG({ width: outputWidth, height: outputHeight }) as PngImage;
+    let targetY = 0;
+    for (const slice of slices) {
+      copyPngRows(slice.png, stitched, targetY, slice.sourceY, slice.height);
+      targetY += slice.height;
+    }
+
+    return PNG.sync.write(stitched);
+  } finally {
+    await restoreLongScreenshotRepeatingElements(opts.tab);
+    await sendCdp(opts.tab, 'Emulation.clearDeviceMetricsOverride').catch(() => {});
+    await sendCdp(opts.tab, 'Runtime.evaluate', {
+      expression: `window.scrollTo(${originalScroll.x || 0}, ${originalScroll.y || 0})`,
+    }).catch(() => {});
+    await detachCdp(opts.tab);
+  }
+}
+
+async function captureCdpClip(opts: ScreenshotClipOptions): Promise<string> {
+  let originalScroll = { x: 0, y: 0 };
+  try {
+    const metrics = await getPageMetrics(opts.tab);
+    const requestedX = readOptionalPixel(opts.x, 'x');
+    const requestedY = readOptionalPixel(opts.y, 'y');
+    const requestedWidth = readOptionalPixel(opts.width, 'width');
+    const requestedHeight = readOptionalPixel(opts.height, 'height');
+    const x = requestedX ?? 0;
+    const y = requestedY ?? 0;
+    const contentRight = metrics.scrollWidth;
+    const contentBottom = metrics.scrollHeight;
+    const width = requestedWidth ?? contentRight - x;
+    const height = requestedHeight ?? contentBottom - y;
+    assertValidClip(x, y, width, height);
+
+    originalScroll = { x: metrics.scrollX, y: metrics.scrollY };
+
+    await sendCdp(opts.tab, 'Emulation.setDeviceMetricsOverride', {
+      width,
+      height,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await sendCdp(opts.tab, 'Runtime.evaluate', {
+      expression: `new Promise(resolve => { window.scrollTo(${x}, ${y}); requestAnimationFrame(() => resolve()); })`,
+      awaitPromise: true,
+    });
+    const result = await sendCdp(opts.tab, 'Page.captureScreenshot', { format: 'png' }) as { data: string };
+    return result.data;
+  } finally {
+    await sendCdp(opts.tab, 'Emulation.clearDeviceMetricsOverride').catch(() => {});
+    await sendCdp(opts.tab, 'Runtime.evaluate', {
+      expression: `window.scrollTo(${originalScroll.x || 0}, ${originalScroll.y || 0})`,
+    }).catch(() => {});
+    await detachCdp(opts.tab);
   }
 }
 
@@ -66,7 +407,7 @@ program
   .option('-t, --tab <id>', 'Target tab ID', parseInt)
   .option('-k, --keep-attached', 'Keep debugger attached')
   .action(async (expression: string, opts) => {
-    const result = await request('eval', { expression, tabId: opts.tab, keepAttached: opts.keepAttached });
+    const result = await evaluateCdpExpression(expression, opts);
     out(result);
   });
 
@@ -77,7 +418,7 @@ program
   .option('-k, --keep-attached', 'Keep debugger attached')
   .action(async (file: string, opts) => {
     const code = fs.readFileSync(path.resolve(file), 'utf-8');
-    const result = await request('eval.file', { code, tabId: opts.tab, keepAttached: opts.keepAttached });
+    const result = await evaluateCdpExpression(code, opts);
     out(result);
   });
 
@@ -88,12 +429,7 @@ program
   .option('-l, --limit <n>', 'Max results', parseInt)
   .option('-k, --keep-attached', 'Keep debugger attached')
   .action(async (selector: string, opts) => {
-    const result = await request('query', {
-      selector,
-      tabId: opts.tab,
-      limit: opts.limit,
-      keepAttached: opts.keepAttached,
-    });
+    const result = await evaluateCdpExpression(buildQueryExpression(selector, opts.limit), opts);
     out(result);
   });
 
@@ -185,11 +521,25 @@ program
   .description('Capture screenshot')
   .option('-o, --output <file>', 'Output file', 'screenshot.png')
   .option('-f, --full', 'Full page screenshot')
+  .option('-L, --long', 'Single-image long screenshot with adaptive height')
+  .option('--max-height <px>', 'Maximum height for --long', parseInt)
+  .option('--hide-sticky', 'Hide sticky elements after the first long-screenshot slice')
+  .option('--x <px>', 'Clip x coordinate', parseInt)
+  .option('--y <px>', 'Clip y coordinate', parseInt)
+  .option('--width <px>', 'Clip width', parseInt)
+  .option('--height <px>', 'Clip height', parseInt)
   .option('-t, --tab <id>', 'Target tab ID', parseInt)
   .action(async (opts) => {
-    const action = opts.full ? 'screenshot.full' : 'screenshot';
-    const result = (await request(action, { tabId: opts.tab })) as { dataUrl: string };
-    const base64 = result.dataUrl.replace(/^data:image\/\w+;base64,/, '');
+    if (opts.long) {
+      fs.writeFileSync(opts.output, await captureCdpLong(opts));
+      console.log(`Saved to ${opts.output}`);
+      return;
+    }
+
+    const hasClip = opts.x != null || opts.y != null || opts.width != null || opts.height != null;
+    const base64 = opts.full || hasClip
+      ? await captureCdpClip(opts)
+      : await captureCdpViewport(opts.tab);
     fs.writeFileSync(opts.output, Buffer.from(base64, 'base64'));
     console.log(`Saved to ${opts.output}`);
   });
@@ -200,8 +550,8 @@ program
   .option('-o, --output <file>', 'Output file', 'page.pdf')
   .option('-t, --tab <id>', 'Target tab ID', parseInt)
   .action(async (opts) => {
-    const result = (await request('pdf', { tabId: opts.tab })) as { dataBase64: string };
-    fs.writeFileSync(opts.output, Buffer.from(result.dataBase64, 'base64'));
+    const dataBase64 = await printCdpPdf(opts.tab);
+    fs.writeFileSync(opts.output, Buffer.from(dataBase64, 'base64'));
     console.log(`Saved to ${opts.output}`);
   });
 
