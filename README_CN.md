@@ -275,8 +275,8 @@ npx browser-bridge-cli navigate <url> [-t id]        # 导航
 npx browser-bridge-cli reload [-t id] [--no-cache]   # 刷新
 npx browser-bridge-cli screenshot [-o file] [-f] [--long --max-height px --hide-sticky] [--x px --y px --width px --height px] # 截图
 npx browser-bridge-cli pdf [-o file] [-t id]         # 导出 PDF
-npx browser-bridge-cli network [-l limit] [--clear]  # 网络日志
-npx browser-bridge-cli cookies [-u url] [-d domain]  # Cookie
+npx browser-bridge-cli network [-l limit] [-t id] [--clear] # 指定标签页的 CDP 网络日志
+npx browser-bridge-cli cookies [-u url] [-d domain] [-t id]  # 指定标签页 URL 上下文的 CDP Cookie
 npx browser-bridge-cli cdp <method> [params] [-t id] # 原始 CDP 命令
 npx browser-bridge-cli detach [-t id]                # 分离调试器
 npx browser-bridge-cli clients                       # 客户端列表
@@ -284,6 +284,8 @@ npx browser-bridge-cli switch <clientId>             # 切换活跃客户端
 ```
 
 长截图会使用当前视口宽度，并根据页面高度自适应截图高度。默认最大高度是 `30000`；遇到超高页面或无限滚动页面时，用 `--max-height` 控制上限。为避免重复页头，第一张之后会隐藏 fixed 元素；sticky 元素默认保留，需要时可用 `--hide-sticky` 隐藏。
+
+网络和 Cookie 命令都走目标标签页的 CDP。`network` 会启用并读取每个标签页自己的 CDP Network 缓存，不再使用扩展级 `webRequest` 权限。
 
 ```bash
 npx browser-bridge-cli screenshot --long -o page.png

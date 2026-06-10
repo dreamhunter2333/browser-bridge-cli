@@ -5,9 +5,9 @@ const IDLE_ALARM = 'idle-check';
 const IDLE_TIMEOUT = 24 * 60 * 60 * 1000; // 24h default
 const DEFAULT_MAX_FAILURES = 10;
 
-const networkLog = [];
 const MAX_NETWORK_LOG = 500;
-const pendingBodies = new Map();
+const networkLogs = new Map();
+const networkRequests = new Map();
 
 // --- State ---
 
@@ -67,48 +67,6 @@ async function checkWhitelist(action, params) {
     throw new Error(`Blocked by whitelist: ${url}`);
   }
 }
-
-// --- Network logging ---
-
-chrome.webRequest.onBeforeRequest.addListener(
-  (details) => {
-    if (details.requestBody) {
-      pendingBodies.set(details.requestId, details.requestBody);
-    }
-  },
-  { urls: ['<all_urls>'] },
-  ['requestBody']
-);
-
-chrome.webRequest.onCompleted.addListener(
-  (details) => {
-    const entry = {
-      requestId: details.requestId,
-      url: details.url,
-      method: details.method,
-      statusCode: details.statusCode,
-      type: details.type,
-      timeStamp: details.timeStamp,
-      tabId: details.tabId,
-      fromCache: details.fromCache,
-      ip: details.ip,
-    };
-    const body = pendingBodies.get(details.requestId);
-    if (body) {
-      entry.requestBody = body;
-      pendingBodies.delete(details.requestId);
-    }
-    networkLog.push(entry);
-    if (networkLog.length > MAX_NETWORK_LOG) networkLog.shift();
-  },
-  { urls: ['<all_urls>'] }
-);
-
-// Fix: clean up pendingBodies on request error/abort
-chrome.webRequest.onErrorOccurred.addListener(
-  (details) => { pendingBodies.delete(details.requestId); },
-  { urls: ['<all_urls>'] }
-);
 
 // --- WebSocket connection (with chrome.alarms for SW keepalive) ---
 
@@ -298,6 +256,76 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 const attached = new Set();
 
+function getNetworkLog(tabId) {
+  if (!networkLogs.has(tabId)) networkLogs.set(tabId, []);
+  return networkLogs.get(tabId);
+}
+
+function getNetworkRequests(tabId) {
+  if (!networkRequests.has(tabId)) networkRequests.set(tabId, new Map());
+  return networkRequests.get(tabId);
+}
+
+function appendNetworkEntry(tabId, entry) {
+  const log = getNetworkLog(tabId);
+  log.push(entry);
+  if (log.length > MAX_NETWORK_LOG) log.shift();
+  getNetworkRequests(tabId).set(entry.requestId, entry);
+}
+
+chrome.debugger.onEvent.addListener((source, method, params) => {
+  const tabId = source.tabId;
+  if (tabId == null || !attached.has(tabId)) return;
+
+  if (method === 'Network.requestWillBeSent') {
+    appendNetworkEntry(tabId, {
+      requestId: params.requestId,
+      loaderId: params.loaderId,
+      url: params.request?.url,
+      method: params.request?.method,
+      type: params.type,
+      timeStamp: params.timestamp,
+      wallTime: params.wallTime,
+      tabId,
+      requestHeaders: params.request?.headers,
+      postData: params.request?.postData,
+      initiator: params.initiator,
+      redirectResponse: params.redirectResponse,
+    });
+    return;
+  }
+
+  const entry = getNetworkRequests(tabId).get(params.requestId);
+  if (!entry) return;
+
+  if (method === 'Network.responseReceived') {
+    entry.statusCode = params.response?.status;
+    entry.statusText = params.response?.statusText;
+    entry.mimeType = params.response?.mimeType;
+    entry.responseHeaders = params.response?.headers;
+    entry.fromCache = !!(params.response?.fromDiskCache || params.response?.fromPrefetchCache);
+    entry.ip = params.response?.remoteIPAddress;
+    entry.protocol = params.response?.protocol;
+    return;
+  }
+
+  if (method === 'Network.loadingFinished') {
+    entry.encodedDataLength = params.encodedDataLength;
+    entry.finished = true;
+    return;
+  }
+
+  if (method === 'Network.loadingFailed') {
+    entry.errorText = params.errorText;
+    entry.canceled = params.canceled;
+    entry.finished = true;
+  }
+});
+
+chrome.debugger.onDetach.addListener((source) => {
+  if (source.tabId != null) attached.delete(source.tabId);
+});
+
 function isDebuggableUrl(url) {
   if (!url) return true;
   return url.startsWith('http://') || url.startsWith('https://') || url === 'about:blank';
@@ -347,6 +375,9 @@ async function ensureAttached(tabId) {
 
   try {
     await cdpSend(tabId, 'Runtime.enable');
+  } catch {}
+  try {
+    await cdpSend(tabId, 'Network.enable');
   } catch {}
 }
 
@@ -563,15 +594,38 @@ async function handleAction(action, params) {
       }
     }
 
-    case 'network.getAll':
-      return networkLog.slice(-(params.limit || 100));
+    case 'network.getAll': {
+      const tid = await getTargetTabId(params.tabId);
+      await ensureAttached(tid);
+      return getNetworkLog(tid).slice(-(params.limit || 100));
+    }
 
     case 'network.clear':
-      networkLog.length = 0;
+      if (params.tabId != null) {
+        networkLogs.set(params.tabId, []);
+        networkRequests.set(params.tabId, new Map());
+      } else {
+        networkLogs.clear();
+        networkRequests.clear();
+      }
       return { ok: true };
 
-    case 'cookies.get':
-      return await chrome.cookies.getAll(params.filter || {});
+    case 'cookies.get': {
+      const tid = await getTargetTabId(params.tabId);
+      const tab = await chrome.tabs.get(tid);
+      const filter = params.filter || {};
+      const urls = filter.url ? [filter.url] : (tab.url ? [tab.url] : undefined);
+      await ensureAttached(tid);
+      try {
+        const result = await cdpSend(tid, 'Network.getCookies', urls ? { urls } : {});
+        let cookies = result.cookies || [];
+        if (filter.domain) cookies = cookies.filter(cookie => cookie.domain === filter.domain || cookie.domain.endsWith(`.${filter.domain}`));
+        if (filter.name) cookies = cookies.filter(cookie => cookie.name === filter.name);
+        return cookies;
+      } finally {
+        await cdpDetach(tid);
+      }
+    }
 
     case 'cdp': {
       const tid = await getTargetTabId(params.tabId);

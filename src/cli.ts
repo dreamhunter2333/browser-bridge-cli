@@ -559,14 +559,15 @@ program
   .command('network')
   .description('Get captured network requests')
   .option('-l, --limit <n>', 'Max entries', parseInt)
+  .option('-t, --tab <id>', 'Target tab ID', parseInt)
   .option('--clear', 'Clear network log')
   .action(async (opts) => {
     if (opts.clear) {
-      await request('network.clear');
+      await request('network.clear', { tabId: opts.tab });
       console.log('Network log cleared');
       return;
     }
-    const result = await request('network.getAll', { limit: opts.limit });
+    const result = await request('network.getAll', { limit: opts.limit, tabId: opts.tab });
     out(result);
   });
 
@@ -576,12 +577,13 @@ program
   .option('-u, --url <url>', 'Filter by URL')
   .option('-d, --domain <domain>', 'Filter by domain')
   .option('-n, --name <name>', 'Filter by name')
+  .option('-t, --tab <id>', 'Target tab ID', parseInt)
   .action(async (opts) => {
     const filter: Record<string, string> = {};
     if (opts.url) filter.url = opts.url;
     if (opts.domain) filter.domain = opts.domain;
     if (opts.name) filter.name = opts.name;
-    const result = await request('cookies.get', { filter });
+    const result = await request('cookies.get', { filter, tabId: opts.tab });
     out(result);
   });
 
