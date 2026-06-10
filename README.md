@@ -323,6 +323,8 @@ bun run test                 # Run Playwright e2e tests
 - Token revoke disconnects WebSocket clients.
 - Whitelist restricts per-tab operations by URL pattern.
 
+Privacy policy: [PRIVACY.md](./PRIVACY.md)
+
 ## License
 
 MIT

@@ -323,6 +323,8 @@ bun run test                 # 运行 Playwright e2e 测试
 - token 撤销会断开 WebSocket client。
 - 白名单限制按 URL 模式的标签页操作。
 
+隐私政策：[PRIVACY.md](./PRIVACY.md)
+
 ## 许可证
 
 MIT
