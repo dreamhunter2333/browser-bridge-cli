@@ -38,9 +38,14 @@ Browser Bridge requests only the permissions needed for its browser-control purp
 
 - `debugger`: Uses Chrome DevTools Protocol for tab automation, JavaScript evaluation, screenshots, PDF export, network inspection, cookies, and raw CDP commands.
 - `tabs`: Lists, creates, activates, closes, navigates, and reloads browser tabs.
-- `activeTab`: Targets the currently active tab after user interaction.
 - `storage`: Stores pairing state and extension settings locally.
 - `alarms`: Handles Manifest V3 service worker keepalive, reconnects, and idle timeout.
+
+## Limited Use
+
+Browser Bridge uses browser data only to provide user-requested browser debugging and automation features through the paired CLI and Bridge Server.
+
+Browser Bridge does not sell user data, use user data for advertising, transfer user data for unrelated purposes, or use user data to determine creditworthiness or lending eligibility.
 
 ## User Control
 
