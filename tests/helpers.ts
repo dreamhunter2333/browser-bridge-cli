@@ -91,7 +91,8 @@ export async function generateCode(baseUrl: string, token: string): Promise<stri
 export async function launchBrowserWithExtension(wsUrl: string): Promise<BrowserContext> {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-chrome-'));
   const context = await chromium.launchPersistentContext(userDataDir, {
-    headless: false,
+    channel: 'chromium',
+    headless: true,
     args: [
       `--disable-extensions-except=${EXTENSION_PATH}`,
       `--load-extension=${EXTENSION_PATH}`,

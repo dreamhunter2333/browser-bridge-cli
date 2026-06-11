@@ -6,6 +6,6 @@ export default defineConfig({
   retries: 0,
   workers: 1,
   use: {
-    headless: false,
+    headless: true,
   },
 });
