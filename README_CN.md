@@ -61,8 +61,7 @@ bunx browser-bridge-cli info
 如需手动安装，从 [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases) 下载扩展文件：
 
 - `.zip`：解压后通过 **加载已解压的扩展** 加载目录。
-
-也可以直接使用源码中的 `extension/` 目录。
+- 源码：加载源码中的 `extension/` 目录。
 
 1. 打开 Chrome/Edge -> `chrome://extensions`
 2. 开启 **开发者模式**

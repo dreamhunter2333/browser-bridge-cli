@@ -61,8 +61,7 @@ Install Browser Bridge from the [Chrome Web Store](https://chromewebstore.google
 For manual installation, download the extension asset from [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases):
 
 - `.zip`: unzip it and load the folder with **Load unpacked**.
-
-You can also use the `extension/` directory from the source code.
+- Source: load the `extension/` directory from the source code.
 
 1. Open Chrome/Edge -> `chrome://extensions`
 2. Enable **Developer mode**
