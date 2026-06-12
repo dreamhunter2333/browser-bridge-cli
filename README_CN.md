@@ -4,15 +4,7 @@
 
 通过浏览器扩展，使用命令行控制已打开的 Chrome/Edge 浏览器。
 
-```mermaid
-graph LR
-    CLI["CLI Client"]
-    Bridge["Bridge 服务器 (:52853)"]
-    Ext["扩展 Client"]
-
-    CLI -->|"HTTP + token"| Bridge
-    Bridge -->|"WebSocket"| Ext
-```
+![Browser Bridge CLI 介绍图](./docs/browser-bridge-intro.png)
 
 ## AI Agent Skill
 
@@ -27,9 +19,12 @@ npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code code
 npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code -g
 ```
 
-## 单机快速开始
+## 快速开始
 
 这是默认部署：CLI、Bridge Server、浏览器和扩展都在同一台机器上运行。
+
+<details>
+<summary>本机拓扑</summary>
 
 ```mermaid
 graph LR
@@ -40,6 +35,8 @@ graph LR
     CLI -->|"http://127.0.0.1:52853 + local token"| Bridge
     Bridge -->|"ws://127.0.0.1:52853/ext"| Ext
 ```
+
+</details>
 
 ### 1. 安装
 
@@ -89,6 +86,21 @@ npx browser-bridge-cli tabs
 ```
 
 本机 CLI 命令不需要 `--server`。CLI 会从 `~/.browser-bridge/` 读取本机 server state，Server 默认绑定 `127.0.0.1`。
+
+<details>
+<summary>架构</summary>
+
+```mermaid
+graph LR
+    CLI["CLI Client"]
+    Bridge["Bridge 服务器 (:52853)"]
+    Ext["扩展 Client"]
+
+    CLI -->|"HTTP + token"| Bridge
+    Bridge -->|"WebSocket"| Ext
+```
+
+</details>
 
 ## 与 Playwright CLI 和 OpenCLI 对比
 

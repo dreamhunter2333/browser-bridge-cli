@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { startServer, stopServer, apiCall, httpPair, generateCode, launchBrowserWithExtension, getExtensionPopup, nextPort, runCli, stateEnv, type ServerInstance } from './helpers';
+import { startServer, stopServer, apiCall, httpPair, generateCode, launchBrowserWithExtension, getExtensionPopup, nextPort, runCli, stateEnv, makeTempStateEnv, type ServerInstance } from './helpers';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -288,6 +288,7 @@ test.describe('Extension via Playwright', () => {
 
   test('extension popup loads and shows disabled state', async () => {
     const popup = await getExtensionPopup(context);
+    expect(popup.url()).toMatch(/^chrome-extension:\/\//);
     const text = await popup.locator('#statusMain').textContent();
     expect(text).toBeTruthy();
     await popup.close();
@@ -404,6 +405,23 @@ test.describe('CLI commands', () => {
     expect(stdout).toContain('abcdef12...');
     expect(stdout).not.toContain('3456-7890');
     fs.rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  test('config credentials stay in isolated test home', async () => {
+    const testHome = makeTempStateEnv('bb-cli-credential-');
+    const token = 'isolated-test-token';
+    const configFile = path.join(testHome.stateDir, '.browser-bridge', 'config.json');
+    const realConfigFile = path.join(os.homedir(), '.browser-bridge', 'config.json');
+
+    try {
+      const set = await runCli(['config', 'set', 'token', token], testHome.env);
+      expect(set.code).toBe(0);
+      expect(path.resolve(configFile)).not.toBe(path.resolve(realConfigFile));
+      expect(fs.existsSync(configFile)).toBe(true);
+      expect(JSON.parse(fs.readFileSync(configFile, 'utf-8')).token).toBe(token);
+    } finally {
+      testHome.cleanup();
+    }
   });
 
   test('server start/status/stop lifecycle', async () => {

@@ -4,15 +4,7 @@
 
 Control an already-open Chrome/Edge browser from a CLI through a paired browser extension.
 
-```mermaid
-graph LR
-    CLI["CLI Client"]
-    Bridge["Bridge Server (:52853)"]
-    Ext["Extension Client"]
-
-    CLI -->|"HTTP + token"| Bridge
-    Bridge -->|"WebSocket"| Ext
-```
+![Browser Bridge CLI introduction](./docs/browser-bridge-intro.png)
 
 ## AI Agent Skill
 
@@ -27,9 +19,12 @@ npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code code
 npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code -g
 ```
 
-## Quick Start: Single Machine
+## Quick Start
 
 This is the default setup: CLI, Bridge Server, browser, and extension all run on the same machine.
+
+<details>
+<summary>Local topology</summary>
 
 ```mermaid
 graph LR
@@ -40,6 +35,8 @@ graph LR
     CLI -->|"http://127.0.0.1:52853 + local token"| Bridge
     Bridge -->|"ws://127.0.0.1:52853/ext"| Ext
 ```
+
+</details>
 
 ### 1. Install
 
@@ -89,6 +86,21 @@ npx browser-bridge-cli tabs
 ```
 
 Local CLI commands do not need `--server`. The CLI reads local server state from `~/.browser-bridge/`, and the server binds to `127.0.0.1` by default.
+
+<details>
+<summary>Architecture</summary>
+
+```mermaid
+graph LR
+    CLI["CLI Client"]
+    Bridge["Bridge Server (:52853)"]
+    Ext["Extension Client"]
+
+    CLI -->|"HTTP + token"| Bridge
+    Bridge -->|"WebSocket"| Ext
+```
+
+</details>
 
 ## Compared with Playwright CLI and OpenCLI
 

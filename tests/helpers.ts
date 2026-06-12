@@ -37,6 +37,17 @@ export function stateEnv(stateDir: string): Record<string, string> {
   };
 }
 
+export function makeTempStateEnv(prefix = 'bb-cli-home-'): { env: Record<string, string>; stateDir: string; cleanup: () => void } {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  return {
+    env: stateEnv(stateDir),
+    stateDir,
+    cleanup: () => {
+      try { fs.rmSync(stateDir, { recursive: true, force: true }); } catch {}
+    },
+  };
+}
+
 export async function startServer(opts?: { token?: string; port?: number }): Promise<ServerInstance> {
   const port = opts?.port || nextPort();
   const token = opts?.token || `test-server-token-${port}`;
@@ -100,6 +111,14 @@ export async function launchBrowserWithExtension(wsUrl: string): Promise<Browser
       '--disable-gpu',
     ],
   });
+  const close = context.close.bind(context);
+  context.close = async (...args: Parameters<BrowserContext['close']>) => {
+    try {
+      await close(...args);
+    } finally {
+      try { fs.rmSync(userDataDir, { recursive: true, force: true }); } catch {}
+    }
+  };
   return context;
 }
 
@@ -125,14 +144,18 @@ export async function getExtensionPopup(context: BrowserContext) {
 }
 
 export function runCli(args: string[], env?: Record<string, string>): Promise<{ stdout: string; stderr: string; code: number }> {
+  const temp = env ? undefined : makeTempStateEnv();
   return new Promise((resolve) => {
     const proc = spawn('bun', ['run', CLI_PATH, ...args], {
-      env: { ...process.env, ...env },
+      env: { ...process.env, ...(env || temp?.env) },
       stdio: 'pipe',
     });
     let stdout = '', stderr = '';
     proc.stdout.on('data', d => stdout += d);
     proc.stderr.on('data', d => stderr += d);
-    proc.on('close', code => resolve({ stdout, stderr, code: code || 0 }));
+    proc.on('close', code => {
+      temp?.cleanup();
+      resolve({ stdout, stderr, code: code || 0 });
+    });
   });
 }
