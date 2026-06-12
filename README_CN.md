@@ -54,9 +54,11 @@ npx browser-bridge-cli info
 bunx browser-bridge-cli info
 ```
 
-### 2. 加载浏览器扩展
+### 2. 安装浏览器扩展
 
-从 [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases) 下载扩展文件：
+从 [Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/cmakbjpcmibhleibmgaiflpoencnelol) 安装 Browser Bridge。
+
+如需手动安装，从 [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases) 下载扩展文件：
 
 - `.zip`：解压后通过 **加载已解压的扩展** 加载目录。
 

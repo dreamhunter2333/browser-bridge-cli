@@ -54,9 +54,11 @@ npx browser-bridge-cli info
 bunx browser-bridge-cli info
 ```
 
-### 2. Load browser extension
+### 2. Install browser extension
 
-Download the extension asset from [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases):
+Install Browser Bridge from the [Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/cmakbjpcmibhleibmgaiflpoencnelol).
+
+For manual installation, download the extension asset from [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases):
 
 - `.zip`: unzip it and load the folder with **Load unpacked**.
 
