@@ -58,6 +58,9 @@ bunx browser-bridge-cli info
 
 从 [Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/cmakbjpcmibhleibmgaiflpoencnelol) 安装 Browser Bridge。
 
+<details>
+<summary>手动安装</summary>
+
 如需手动安装，从 [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases) 下载扩展文件：
 
 - `.zip`：解压后通过 **加载已解压的扩展** 加载目录。
@@ -66,6 +69,8 @@ bunx browser-bridge-cli info
 1. 打开 Chrome/Edge -> `chrome://extensions`
 2. 开启 **开发者模式**
 3. 点击 **加载已解压的扩展** -> 选择扩展目录
+
+</details>
 
 ### 3. 启动 Server 并配对扩展
 

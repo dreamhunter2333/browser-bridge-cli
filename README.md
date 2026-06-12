@@ -58,6 +58,9 @@ bunx browser-bridge-cli info
 
 Install Browser Bridge from the [Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/cmakbjpcmibhleibmgaiflpoencnelol).
 
+<details>
+<summary>Manual installation</summary>
+
 For manual installation, download the extension asset from [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases):
 
 - `.zip`: unzip it and load the folder with **Load unpacked**.
@@ -66,6 +69,8 @@ For manual installation, download the extension asset from [GitHub Releases](htt
 1. Open Chrome/Edge -> `chrome://extensions`
 2. Enable **Developer mode**
 3. Click **Load unpacked** -> select the extension directory
+
+</details>
 
 ### 3. Start server and pair extension
 
