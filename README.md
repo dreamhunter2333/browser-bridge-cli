@@ -86,23 +86,25 @@ npx browser-bridge-cli tabs
 
 Local CLI commands do not need `--server`. The CLI reads local server state from `~/.browser-bridge/`, and the server binds to `127.0.0.1` by default.
 
-## Compared with Playwright CLI
+## Compared with Playwright CLI and OpenCLI
 
 Playwright CLI is a strong browser automation and testing tool. Its [attach flow](https://playwright.dev/agent-cli/commands/attach) and [MCP extension mode](https://playwright.dev/mcp/configuration/browser-extension) can now connect to existing Chrome/Edge sessions through CDP, Playwright server endpoints, or the Playwright Extension, so it can reuse logged-in sessions and existing browser tabs.
 
-Browser Bridge CLI is not trying to replace Playwright tests. It is a small control bridge for an already-open daily browser, especially when commands need to come from another terminal, another agent, or another machine.
+OpenCLI turns websites, browser sessions, Electron apps, and local tools into CLI surfaces for humans and AI agents. It is strongest when you want deterministic site commands, reusable adapters, and a broader command hub.
 
-| Area | Browser Bridge CLI | Playwright CLI |
-| --- | --- | --- |
-| Product focus | Remote-control bridge for a user's real Chrome/Edge session | Automation, testing, and agent workflows built on Playwright |
-| Browser connection | Paired extension -> Bridge Server -> CLI | Launched browser, CDP attach, Playwright endpoint, or Playwright Extension |
-| Existing logged-in browser | Default use case | Supported by CDP attach or extension mode |
-| Tab model | Lists, switches, and controls open tabs by tab id, subject to whitelist rules | Usually operates on a Playwright session/page; extension mode attaches to selected/authorized tabs instead of acting as a global tab-control bridge |
-| Remote topology | Built in: CLI, server, and extension can run on one, two, or three machines | Usually local; remote use is via CDP endpoint, Playwright server, tunnel, or MCP setup |
-| Command surface | Direct CLI primitives: tabs, eval, query, screenshot, PDF, cookies, network, raw CDP | Rich automation model: locators, assertions, snapshots, tracing, storage state, test runner |
-| Auth model | Pair codes plus server/client tokens; remote CLIs can be paired and revoked | Depends on Playwright session, CDP endpoint, MCP client, or extension permission flow |
+Browser Bridge CLI is not trying to replace Playwright tests or OpenCLI adapters. It is a small control bridge for an already-open daily browser, especially when commands need to come from another terminal, another agent, or another machine.
 
-Use Playwright CLI when you want repeatable browser automation, tests, locators, assertions, tracing, or Playwright's agent tooling. Use Browser Bridge CLI when you want a lightweight command bridge into a real browser that is already open, with explicit tab control and remote-machine deployment as first-class workflows.
+| Area | Browser Bridge CLI | Playwright CLI | OpenCLI |
+| --- | --- | --- | --- |
+| Product focus | Remote-control bridge for a user's real Chrome/Edge session | Automation, testing, and agent workflows built on Playwright | CLI hub for websites, browser sessions, Electron apps, and local tools |
+| Browser connection | Paired extension -> Bridge Server -> CLI | Launched browser, CDP attach, Playwright endpoint, or Playwright Extension | Browser extension plus local daemon, with profile/session selection |
+| Existing logged-in browser | Default use case | Supported by CDP attach or extension mode | Supported through Chrome session reuse |
+| Tab model | Lists, switches, and controls open tabs by tab id, subject to whitelist rules | Usually operates on a Playwright session/page; extension mode attaches to selected/authorized tabs instead of acting as a global tab-control bridge | Works through browser sessions, targets, and adapters; less focused on global tab brokering |
+| Remote topology | Built in: CLI, server, and extension can run on one, two, or three machines | Usually local; remote use is via CDP endpoint, Playwright server, tunnel, or MCP setup | Primarily local browser/daemon workflow |
+| Command surface | Direct CLI primitives: tabs, eval, query, screenshot, PDF, cookies, network, raw CDP | Rich automation model: locators, assertions, snapshots, tracing, storage state, test runner | Site adapters, browser primitives, Electron app adapters, and registered local CLI tools |
+| Auth model | Pair codes plus server/client tokens; remote CLIs can be paired and revoked | Depends on Playwright session, CDP endpoint, MCP client, or extension permission flow | Reuses Chrome login state through the extension/daemon setup |
+
+Use Playwright CLI when you want repeatable browser automation, tests, locators, assertions, tracing, or Playwright's agent tooling. Use OpenCLI when you want deterministic commands and adapters for specific sites, desktop apps, or local tools. Use Browser Bridge CLI when you want a lightweight command bridge into a real browser that is already open, with explicit tab control and remote-machine deployment as first-class workflows.
 
 ## Advanced Deployment
 

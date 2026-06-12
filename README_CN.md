@@ -86,23 +86,25 @@ npx browser-bridge-cli tabs
 
 本机 CLI 命令不需要 `--server`。CLI 会从 `~/.browser-bridge/` 读取本机 server state，Server 默认绑定 `127.0.0.1`。
 
-## 与 Playwright CLI 对比
+## 与 Playwright CLI 和 OpenCLI 对比
 
 Playwright CLI 是成熟的浏览器自动化和测试工具。它的 [attach flow](https://playwright.dev/agent-cli/commands/attach) 和 [MCP extension mode](https://playwright.dev/mcp/configuration/browser-extension) 现在也可以通过 CDP、Playwright server endpoint 或 Playwright Extension 连接已有 Chrome/Edge，因此也能复用登录态和已打开的浏览器标签页。
 
-Browser Bridge CLI 不是要替代 Playwright 测试。它定位更小：给已经打开的日常浏览器加一层可配对、可远程、可脚本化的控制桥，适合从另一个终端、另一个 agent 或另一台机器发命令。
+OpenCLI 可以把网站、浏览器会话、Electron 应用和本地工具变成面向人和 AI Agent 的 CLI 接口。它更适合确定性站点命令、可复用 adapter 和更广的命令中心场景。
 
-| 维度 | Browser Bridge CLI | Playwright CLI |
-| --- | --- | --- |
-| 产品定位 | 面向用户真实 Chrome/Edge 的远程控制桥 | 基于 Playwright 的自动化、测试和 agent 工作流 |
-| 浏览器连接 | 已配对扩展 -> Bridge Server -> CLI | 启动浏览器、CDP attach、Playwright endpoint 或 Playwright Extension |
-| 复用已有登录态 | 默认场景 | CDP attach 或 extension mode 支持 |
-| 标签页模型 | 可列出、切换并按 tab id 控制已打开标签页，受白名单规则限制 | 通常围绕 Playwright session/page 工作；extension mode 连接被选择/授权的标签页，不是全局标签页控制桥 |
-| 远程拓扑 | 内置支持单机、两台机器、三台机器部署 | 通常偏本机；远程依赖 CDP endpoint、Playwright server、tunnel 或 MCP 配置 |
-| 命令面 | 直接 CLI 原语：tabs、eval、query、screenshot、PDF、cookies、network、raw CDP | 更完整的自动化模型：locator、assertion、snapshot、trace、storage state、test runner |
-| 认证模型 | 配对码 + server/client token；远程 CLI 可配对和撤销 | 取决于 Playwright session、CDP endpoint、MCP client 或扩展授权流程 |
+Browser Bridge CLI 不是要替代 Playwright 测试或 OpenCLI adapter。它定位更小：给已经打开的日常浏览器加一层可配对、可远程、可脚本化的控制桥，适合从另一个终端、另一个 agent 或另一台机器发命令。
 
-需要可重复的浏览器自动化、测试、locator、断言、trace 或 Playwright agent 工具时，优先用 Playwright CLI。需要把命令打进一个已经打开的真实浏览器，并且希望多标签控制和远程机器部署是一等能力时，用 Browser Bridge CLI。
+| 维度 | Browser Bridge CLI | Playwright CLI | OpenCLI |
+| --- | --- | --- | --- |
+| 产品定位 | 面向用户真实 Chrome/Edge 的远程控制桥 | 基于 Playwright 的自动化、测试和 agent 工作流 | 面向网站、浏览器会话、Electron 应用和本地工具的 CLI hub |
+| 浏览器连接 | 已配对扩展 -> Bridge Server -> CLI | 启动浏览器、CDP attach、Playwright endpoint 或 Playwright Extension | 浏览器扩展 + 本地 daemon，并支持 profile/session 选择 |
+| 复用已有登录态 | 默认场景 | CDP attach 或 extension mode 支持 | 通过 Chrome session 复用支持 |
+| 标签页模型 | 可列出、切换并按 tab id 控制已打开标签页，受白名单规则限制 | 通常围绕 Playwright session/page 工作；extension mode 连接被选择/授权的标签页，不是全局标签页控制桥 | 通过 browser session、target 和 adapter 工作，不以全局标签页 broker 为核心 |
+| 远程拓扑 | 内置支持单机、两台机器、三台机器部署 | 通常偏本机；远程依赖 CDP endpoint、Playwright server、tunnel 或 MCP 配置 | 主要是本机浏览器/daemon 工作流 |
+| 命令面 | 直接 CLI 原语：tabs、eval、query、screenshot、PDF、cookies、network、raw CDP | 更完整的自动化模型：locator、assertion、snapshot、trace、storage state、test runner | 站点 adapter、浏览器原语、Electron 应用 adapter 和已注册的本地 CLI 工具 |
+| 认证模型 | 配对码 + server/client token；远程 CLI 可配对和撤销 | 取决于 Playwright session、CDP endpoint、MCP client 或扩展授权流程 | 通过扩展/daemon 设置复用 Chrome 登录态 |
+
+需要可重复的浏览器自动化、测试、locator、断言、trace 或 Playwright agent 工具时，优先用 Playwright CLI。需要针对特定站点、桌面应用或本地工具的确定性命令和 adapter 时，用 OpenCLI。需要把命令打进一个已经打开的真实浏览器，并且希望多标签控制和远程机器部署是一等能力时，用 Browser Bridge CLI。
 
 ## 高级部署
 
