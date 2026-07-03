@@ -1,0 +1,4 @@
+interface:
+  display_name: "Browser Bridge CLI Skill Generator"
+  short_description: "Create website workflow skills"
+  default_prompt: "Use $browser-bridge-cli-skill-generator to create a skill for operating this website workflow."
