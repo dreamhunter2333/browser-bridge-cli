@@ -38,7 +38,8 @@ git tag v<version>
 - `extension/background.js` — MV3 service worker, WebSocket client, Chrome APIs and CDP dispatch.
 - `extension/popup.html` / `extension/popup.js` — popup UI for enable/disable, pairing, whitelist, settings.
 - `tests/e2e.test.ts` / `tests/helpers.ts` — Playwright tests for server, extension, CLI, screenshots.
-- `skill/SKILL.md` — installable agent skill documentation.
+- `skills/browser-bridge-cli/SKILL.md` — installable Browser Bridge CLI agent skill.
+- `skills/browser-bridge-cli-skill-generator/SKILL.md` — skill for creating website workflow skills backed by Browser Bridge CLI.
 - `docs/browser-bridge-intro.png` — README/Chrome Web Store product image.
 - `docs/browser-bridge-icon.png` — source product icon used to derive extension icons.
 

@@ -6,17 +6,34 @@
 
 ![Browser Bridge CLI 介绍图](./docs/browser-bridge-intro.png)
 
-## AI Agent Skill
+## AI Agent Skills
+
+### Browser Bridge CLI
 
 ```bash
 # 安装到 Claude Code
-npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code
+npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli --agent claude-code
 
 # 安装到多个 agent
-npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code codex
+npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli --agent claude-code codex
 
 # 全局安装
-npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code -g
+npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli --agent claude-code -g
+```
+
+### Browser Bridge CLI Skill Generator
+
+用于创建通过 Browser Bridge CLI 操作一个或多个网站的流程型 skill。
+
+```bash
+# 安装到 Claude Code
+npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli-skill-generator --agent claude-code
+
+# 安装到多个 agent
+npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli-skill-generator --agent claude-code codex
+
+# 全局安装
+npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli-skill-generator --agent claude-code -g
 ```
 
 ## 快速开始

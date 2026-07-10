@@ -16,7 +16,7 @@ CLI --HTTP+token--> Bridge Server (:52853) --WebSocket--> Extension (service wor
 ## Prerequisites
 
 - **Node.js** >= 20 or **Bun** >= 1.0
-- **Browser extension** loaded from `${SKILL_BASE_DIR}/extension/` directory
+- **Browser extension** installed from the Chrome Web Store or loaded from this repository's `extension/` directory
 - **Bridge server** running and extension paired
 
 ## Setup (one-time)

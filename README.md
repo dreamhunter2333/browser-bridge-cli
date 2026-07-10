@@ -6,17 +6,34 @@ Control an already-open Chrome/Edge browser from a CLI through a paired browser 
 
 ![Browser Bridge CLI introduction](./docs/browser-bridge-intro.png)
 
-## AI Agent Skill
+## AI Agent Skills
+
+### Browser Bridge CLI
 
 ```bash
 # Install to Claude Code
-npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code
+npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli --agent claude-code
 
 # Install to multiple agents
-npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code codex
+npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli --agent claude-code codex
 
 # Install globally
-npx skills add dreamhunter2333/browser-bridge-cli/skill --agent claude-code -g
+npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli --agent claude-code -g
+```
+
+### Browser Bridge CLI Skill Generator
+
+Use this skill to create workflow skills for operating one or more websites with Browser Bridge CLI.
+
+```bash
+# Install to Claude Code
+npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli-skill-generator --agent claude-code
+
+# Install to multiple agents
+npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli-skill-generator --agent claude-code codex
+
+# Install globally
+npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli-skill-generator --agent claude-code -g
 ```
 
 ## Quick Start
