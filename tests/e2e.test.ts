@@ -527,6 +527,191 @@ test.describe('End-to-end flow', () => {
     }
   });
 
+  test('raw CDP uploads paths, intercepts file choosers and drops files', async () => {
+    const page = await context.newPage();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-upload-'));
+    const file = path.join(dir, '上传 sample.txt');
+    fs.writeFileSync(file, 'bridge upload content');
+    await page.setContent(`<input id="file" type="file" multiple>
+      <button id="choose" onclick="const input = document.createElement('input'); input.type='file'; input.id='dynamic'; document.body.append(input); input.click()">Choose</button>
+      <div id="drop" style="position:absolute;left:0;top:100px;width:300px;height:200px"
+        ondragover="event.preventDefault()"
+        ondrop="event.preventDefault(); window.dropped = Promise.all([...event.dataTransfer.files].map(async f => ({name:f.name, text:await f.text()})))">Drop</div>
+      <div draggable="true" style="position:absolute;left:0;top:320px;width:150px;height:100px"
+        ondragstart="event.dataTransfer.setData('text/plain', 'page drag')">Drag me</div>
+      <div style="position:absolute;left:320px;top:320px;width:200px;height:100px" ondragover="event.preventDefault()"
+        ondrop="event.preventDefault(); window.dragText=event.dataTransfer.getData('text/plain')">Target</div>`);
+    await page.bringToFront();
+    const tabs = await apiCall(s.baseUrl, s.token, 'tabs.list');
+    const tabId = (tabs.body.data as any[]).find(tab => tab.active && tab.url === 'about:blank').id;
+    const cdp = async (method: string, params = {}) => {
+      const result = await runCli(['cdp', method, JSON.stringify(params), '-t', String(tabId), '-k', '--server', s.baseUrl, '--token', s.token]);
+      expect(result.stderr).toBe('');
+      expect(result.code).toBe(0);
+      return JSON.parse(result.stdout);
+    };
+    try {
+      const root = await cdp('DOM.getDocument');
+      const input = await cdp('DOM.querySelector', { nodeId: root.root.nodeId, selector: '#file' });
+      await cdp('DOM.setFileInputFiles', { nodeId: input.nodeId, files: [file] });
+      expect(await page.locator('#file').evaluate(async (el: HTMLInputElement) => await el.files![0].text())).toBe('bridge upload content');
+      const capture = await runCli(['cdp-events', '-t', String(tabId), '--server', s.baseUrl, '--token', s.token]);
+      expect(capture.code).toBe(0);
+      const start = JSON.parse(capture.stdout);
+      await cdp('Page.enable');
+      await cdp('Page.setInterceptFileChooserDialog', { enabled: true });
+      await cdp('Runtime.evaluate', { expression: "document.querySelector('#choose').click()", userGesture: true });
+      let chooser: any;
+      await expect.poll(async () => {
+        const result = await runCli(['cdp-events', '-t', String(tabId), '--since', String(start.cursor), '--stream', start.streamId, '--method', 'Page.fileChooserOpened', '--server', s.baseUrl, '--token', s.token]);
+        expect(result.code).toBe(0);
+        chooser = JSON.parse(result.stdout).events[0];
+        return chooser?.method;
+      }).toBe('Page.fileChooserOpened');
+      await cdp('DOM.setFileInputFiles', { backendNodeId: chooser.params.backendNodeId, files: [file] });
+      expect(await page.locator('#dynamic').evaluate(async (el: HTMLInputElement) => await el.files![0].text())).toBe('bridge upload content');
+      await cdp('Page.setInterceptFileChooserDialog', { enabled: false });
+
+      const data = { items: [], files: [file], dragOperationsMask: 1 };
+      for (const type of ['dragEnter', 'dragOver', 'drop']) {
+        await cdp('Input.dispatchDragEvent', { type, x: 100, y: 150, data });
+      }
+      expect(await page.evaluate(() => (window as any).dropped)).toEqual([{ name: '上传 sample.txt', text: 'bridge upload content' }]);
+
+      await cdp('Input.setInterceptDrags', { enabled: true });
+      await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 20, y: 350 });
+      await cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: 20, y: 350, button: 'left', buttons: 1, clickCount: 1 });
+      await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 100, y: 350, button: 'left', buttons: 1 });
+      await cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 350, y: 350, button: 'left', buttons: 1 });
+      let drag: any;
+      await expect.poll(async () => {
+        const result = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId, method: 'Input.dragIntercepted' });
+        drag = (result.body.data as any).events[0];
+        return !!drag;
+      }).toBe(true);
+      for (const type of ['dragEnter', 'dragOver', 'drop']) {
+        await cdp('Input.dispatchDragEvent', { type, x: 350, y: 350, data: drag.params.data });
+      }
+      await cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 350, y: 350, button: 'left', buttons: 0, clickCount: 1 });
+      await cdp('Input.setInterceptDrags', { enabled: false });
+      expect(await page.evaluate(() => (window as any).dragText)).toBe('page drag');
+
+      const replay = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId, since: start.cursor, streamId: start.streamId, method: 'Page.fileChooserOpened' });
+      expect((replay.body.data as any).events[0]).toEqual(chooser);
+      const next = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId, since: (replay.body.data as any).cursor, streamId: start.streamId, method: 'Page.fileChooserOpened' });
+      expect((next.body.data as any).events).toEqual([]);
+      await apiCall(s.baseUrl, s.token, 'cdp.detach', { tabId });
+      await expect.poll(async () => {
+        const read = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId, streamId: start.streamId });
+        return (read.body.data as any).attached;
+      }).toBe(false);
+      await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId, stop: true });
+      const stale = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId, streamId: start.streamId });
+      expect(stale.body.success).toBe(false);
+    } finally {
+      await apiCall(s.baseUrl, s.token, 'cdp.detach', { tabId });
+      await page.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('raw CDP routes iframe sessions and their file chooser events', async () => {
+    await context.route('http://bridge-*.test/**', route => route.fulfill({
+      contentType: 'text/html', body: '<input type="file" id="file">',
+    }));
+    const page = await context.newPage();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-frame-upload-'));
+    const file = path.join(dir, 'frame.txt');
+    fs.writeFileSync(file, 'iframe upload');
+    let tabId: number;
+    try {
+      await page.goto('http://bridge-parent.test/');
+      const tabs = await apiCall(s.baseUrl, s.token, 'tabs.list');
+      tabId = (tabs.body.data as any[]).find(tab => tab.url === page.url()).id;
+      const cdp = async (method: string, params = {}, sessionId?: string) => {
+        const result = await apiCall(s.baseUrl, s.token, 'cdp', { tabId, method, params, sessionId, keepAttached: true });
+        expect(result.body.success, JSON.stringify(result.body)).toBe(true);
+        return result.body.data as any;
+      };
+      const capture = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId });
+      const start = capture.body.data as any;
+      await cdp('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+      await cdp('Runtime.evaluate', { expression: "const frame = document.createElement('iframe'); frame.src='http://bridge-child.test/'; document.body.append(frame)" });
+      let sessionId: string;
+      await expect.poll(async () => {
+        const events = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId, since: start.cursor, method: 'Target.attachedToTarget' });
+        sessionId = (events.body.data as any).events.find((event: any) => event.params.targetInfo.type === 'iframe')?.params.sessionId;
+        return !!sessionId;
+      }).toBe(true);
+      const routed = await runCli(['cdp', 'Runtime.evaluate', JSON.stringify({ expression: 'location.hostname', returnByValue: true }), '-t', String(tabId), '-k', '--session', sessionId!, '--server', s.baseUrl, '--token', s.token]);
+      expect(routed.code, routed.stderr).toBe(0);
+      expect(JSON.parse(routed.stdout).result.value).toBe('bridge-child.test');
+      await cdp('Page.enable', {}, sessionId!);
+      await cdp('Page.setInterceptFileChooserDialog', { enabled: true }, sessionId!);
+      await cdp('Runtime.evaluate', { expression: "document.querySelector('#file').click()", userGesture: true }, sessionId!);
+      let chooser: any;
+      await expect.poll(async () => {
+        const events = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId, method: 'Page.fileChooserOpened', sessionId });
+        chooser = (events.body.data as any).events[0];
+        return chooser?.sessionId;
+      }).toBe(sessionId!);
+      await cdp('DOM.setFileInputFiles', { backendNodeId: chooser.params.backendNodeId, files: [file] }, sessionId!);
+      const content = await cdp('Runtime.evaluate', { expression: "document.querySelector('#file').files[0].text()", awaitPromise: true, returnByValue: true }, sessionId!);
+      expect(content.result.value).toBe('iframe upload');
+      const invalid = await apiCall(s.baseUrl, s.token, 'cdp', { tabId, method: 'Runtime.evaluate', params: { expression: '1' }, sessionId: 'invalid', keepAttached: true });
+      expect(invalid.body.success).toBe(false);
+    } finally {
+      await page.close();
+      await context.unroute('http://bridge-*.test/**');
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test('raw CDP event capture reports overflow and session replacement', async () => {
+    const page = await context.newPage();
+    await page.bringToFront();
+    const tabs = await apiCall(s.baseUrl, s.token, 'tabs.list');
+    const tabId = (tabs.body.data as any[]).find(tab => tab.active && tab.url === 'about:blank').id;
+    try {
+      const capture = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId });
+      const start = capture.body.data as any;
+      const log = await apiCall(s.baseUrl, s.token, 'cdp', {
+        tabId, keepAttached: true, method: 'Runtime.evaluate', params: { expression: 'for (let i=0;i<510;i++) console.log(i)' },
+      });
+      expect(log.body.success, JSON.stringify(log.body)).toBe(true);
+      let read: any;
+      await expect.poll(async () => {
+        const result = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId, streamId: start.streamId, since: start.cursor });
+        read = result.body.data;
+        return read.dropped;
+      }).toBe(true);
+      expect(read.events.length).toBeLessThanOrEqual(500);
+      const oversized = await apiCall(s.baseUrl, s.token, 'cdp', {
+        tabId, keepAttached: true, method: 'Runtime.evaluate', params: { expression: "console.log('x'.repeat(2100000))" },
+      });
+      expect(oversized.body.success).toBe(true);
+      await expect.poll(async () => {
+        const result = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId, since: read.cursor });
+        return (result.body.data as any).dropped;
+      }).toBe(true);
+      await apiCall(s.baseUrl, s.token, 'cdp.detach', { tabId });
+      await expect.poll(async () => {
+        const result = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId });
+        return (result.body.data as any).detached !== null;
+      }).toBe(true);
+      await apiCall(s.baseUrl, s.token, 'cdp', { tabId, keepAttached: true, method: 'Runtime.enable' });
+      const stale = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId, streamId: start.streamId });
+      expect(stale.body.success).toBe(false);
+      const fresh = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId });
+      expect((fresh.body.data as any).streamId).not.toBe(start.streamId);
+      const negative = await runCli(['cdp-events', '-t', String(tabId), '--since', '-1', '--server', s.baseUrl, '--token', s.token]);
+      expect(negative.code).not.toBe(0);
+      expect(negative.stderr).toContain('Invalid event cursor');
+    } finally {
+      await page.close();
+    }
+  });
+
   test('CLI screenshot saves file', async () => {
     const tmpFile = path.join(os.tmpdir(), `bb-test-screenshot-${Date.now()}.png`);
     const { code } = await runCli(['screenshot', '-o', tmpFile, '--server', s.baseUrl, '--token', s.token]);

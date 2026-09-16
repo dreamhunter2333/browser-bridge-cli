@@ -3,8 +3,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { WebSocketServer, WebSocket } from 'ws';
-import { randomUUID, randomInt } from 'node:crypto';
+import { randomUUID, randomInt, createHash } from 'node:crypto';
 import { parseArgs } from 'node:util';
+import { startShare, shareIdentity, localShareHost, shareAccess } from './share.js';
 
 // --- CLI args ---
 
@@ -219,7 +220,53 @@ function authenticateRequest(req: http.IncomingMessage): boolean {
   return false;
 }
 
+type ShareDefinition = { clientName: string; tabId?: number; followActive?: boolean; tabs?: boolean; basePath: string; authHash?: string };
+const sharesFile = path.join(stateDir, 'shares.json');
+const shareDefinitions = new Map<string, ShareDefinition>();
+const liveShares = new Map<string, Awaited<ReturnType<typeof startShare>>>();
+const startingShares = new Map<string, Promise<Awaited<ReturnType<typeof startShare>>>>();
+try {
+  for (const definition of JSON.parse(fs.readFileSync(sharesFile, 'utf8'))) {
+    if (/^\/share\/[a-f0-9]{24}\/$/.test(definition.basePath)) shareDefinitions.set(definition.basePath, definition);
+  }
+} catch {}
+function saveShares() { fs.writeFileSync(sharesFile, JSON.stringify([...shareDefinitions.values()]), { mode: 0o600 }); }
+async function openShare(definition: ShareDefinition) {
+  const key = definition.basePath;
+  if (liveShares.has(key)) return liveShares.get(key)!;
+  if (startingShares.has(key)) return startingShares.get(key)!;
+  const work = startShare(async (action, params = {}) => {
+    const client = [...clients.values()].find(c => c.paired && c.name === definition.clientName && c.ws.readyState === WebSocket.OPEN);
+    if (!client) throw new Error('Shared browser is not connected');
+    const result = await sendToClient(client, action, params) as any;
+    if (!result.success) throw new Error(result.error || 'Browser command failed');
+    return result.data;
+  }, { ...definition, host: HOST, port: PORT, server, onStop: () => liveShares.delete(key) });
+  startingShares.set(key, work);
+  try { const session = await work; liveShares.set(key, session); return session; }
+  finally { startingShares.delete(key); }
+}
+function requestedShare(url = '') { return [...shareDefinitions.values()].find(d => url.startsWith(d.basePath)); }
+
 const server = http.createServer(async (req, res) => {
+  if (req.url?.startsWith('/share/')) {
+    const definition = requestedShare(req.url);
+    if (!definition) { sendJson(res, 404, { error: 'Unknown share' }); return; }
+    const permission = shareAccess(req, HOST, definition.authHash ? Buffer.from(definition.authHash, 'hex') : undefined);
+    if (permission !== 200) {
+      if (permission === 401) res.setHeader('WWW-Authenticate', 'Basic realm="Browser Bridge Share", charset="UTF-8"');
+      res.writeHead(permission); res.end('Authentication required'); return;
+    }
+    if (req.method === 'POST' && req.url === definition.basePath + 'stop') {
+      await startingShares.get(definition.basePath)?.catch(() => {});
+      await liveShares.get(definition.basePath)?.stop();
+      shareDefinitions.delete(definition.basePath); saveShares();
+      sendJson(res, 200, { stopped: true }); return;
+    }
+    try { (await openShare(definition)).handleRequest(req, res); }
+    catch { sendJson(res, 503, { error: 'Shared browser or tab unavailable; retry when connected' }); }
+    return;
+  }
   if (req.method === 'OPTIONS') {
     res.writeHead(204, {
       'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
@@ -303,6 +350,28 @@ const server = http.createServer(async (req, res) => {
       const { action, params, clientId } = JSON.parse(raw);
       if (!action) {
         sendJson(res, 400, { success: false, error: 'Missing action' });
+        return;
+      }
+
+      if (action === 'share.start') {
+        const client = getReadyClient(clientId);
+        if (!client) throw new Error('No connected browser');
+        if ([params?.tabs, params?.followActive, params?.tabId !== undefined].filter(Boolean).length > 1) throw new Error('Conflicting share modes');
+        const tabId = params?.tabs || params?.followActive ? undefined : params?.tabId ?? (await sendToClient(client, 'tabs.current', {}) as any).data?.id;
+        if (tabId !== undefined && (!Number.isSafeInteger(tabId) || tabId < 0)) throw new Error('Invalid tab ID');
+        const identity = shareIdentity(JSON.stringify([client.name, params?.tabs ? 'browser' : params?.followActive ? 'active' : tabId]));
+        const previous = shareDefinitions.get(identity.basePath);
+        let authHash = previous?.authHash;
+        if (params?.username || params?.password) {
+          if (typeof params.username !== 'string' || params.username.includes(':') || typeof params.password !== 'string' || !params.password) throw new Error('Invalid share login');
+          authHash = createHash('sha256').update(params.username + ':' + params.password).digest('hex');
+        }
+        if (!localShareHost(HOST) && !authHash) throw new Error('Non-local listeners require --username and --password-env');
+        const definition = { ...identity, clientName: client.name, tabId, tabs: !!params?.tabs, followActive: !!params?.followActive, authHash };
+        if (previous && JSON.stringify(previous) !== JSON.stringify(definition)) await liveShares.get(identity.basePath)?.stop();
+        shareDefinitions.set(identity.basePath, definition); saveShares();
+        await openShare(definition);
+        sendJson(res, 200, { success: true, data: { path: identity.basePath, tabId: tabId ?? null, mode: params?.tabs ? 'browser' : params?.followActive ? 'active' : 'tab', clientId: client.id } });
         return;
       }
 
@@ -390,7 +459,13 @@ const server = http.createServer(async (req, res) => {
 
 // --- WebSocket Server ---
 
-const wss = new WebSocketServer({ server, path: '/ext' });
+const wss = new WebSocketServer({ noServer: true });
+server.on('upgrade', (req, socket, head) => {
+  if (req.url === '/ext') { wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req)); return; }
+  const definition = requestedShare(req.url);
+  if (!definition || shareAccess(req, HOST, definition.authHash ? Buffer.from(definition.authHash, 'hex') : undefined) !== 200) { socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n'); return; }
+  void openShare(definition).then(session => session.handleUpgrade(req, socket, head)).catch(() => socket.destroy());
+});
 
 function rejectPendingForClient(clientId: string, reason: string) {
   for (const [id, pending] of pendingRequests) {
@@ -430,9 +505,16 @@ wss.on('connection', (ws, req) => {
 
   console.log(`Client ${clientId} connected from ${origin}`);
 
-  ws.on('message', (data) => {
+  ws.on('message', (data, binary) => {
     try {
-      const msg = JSON.parse(data.toString());
+      const packet = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer);
+      if (binary && (packet.length < 4 || packet.readUInt32BE(0) > packet.length - 4)) throw new Error('Invalid video packet');
+      const size = binary ? packet.readUInt32BE(0) : 0;
+      const msg = JSON.parse(binary ? packet.subarray(4, 4 + size).toString() : packet.toString());
+      if (binary) {
+        if (!msg.data?.frame?.video) throw new Error('Invalid video envelope');
+        msg.data.frame.video.data = packet.subarray(4 + size);
+      }
 
       if (msg.type === 'auth') {
         const name = msg.name || client.name;
@@ -538,6 +620,19 @@ function sendToClient(client: Client, action: string, params: Record<string, unk
     }
   });
 }
+
+let shuttingDown = false;
+async function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  const timeout = setTimeout(() => process.exit(0), 5000);
+  await Promise.allSettled([...liveShares.values()].map(s => s.stop()));
+  clearTimeout(timeout);
+  for (const client of clients.values()) { clearInterval(client.heartbeat); client.ws.terminate(); }
+  server.close(() => process.exit(0));
+}
+process.once('SIGTERM', () => { void shutdown(); });
+process.once('SIGINT', () => { void shutdown(); });
 
 // --- Start ---
 

@@ -260,6 +260,53 @@ Notes:
 
 </details>
 
+## Raw CDP files and events
+
+Raw CDP now accepts `--session <id>` for child iframe sessions (Chrome 125+).
+`cdp-events -t <tab-id>` starts/reads buffered native events; resume with
+`--stream <id> --since <cursor>` and optionally filter with `--method` or
+`--session`. This is polling, not a blocking wait or WebSocket subscription.
+Keep the same tab and use `-k` throughout a sequence. File paths refer to the
+browser's machine.
+
+## Live tab sharing
+
+Sharing reuses the Bridge port (default `52853`) at `/share/<stable-hash>/`.
+There is no second listener or credential in the URL.
+
+```bash
+browser-bridge-cli share start --tab 123       # Fixed tab
+browser-bridge-cli share start                 # Pin the current tab once
+browser-bridge-cli share start --follow-active # Follow the active tab
+browser-bridge-cli share start --tabs          # Selectable sidebar tabs
+browser-bridge-cli share status 'http://127.0.0.1:52853/share/HASH/'
+browser-bridge-cli share stop 'http://127.0.0.1:52853/share/HASH/'
+```
+
+- The CLI exits after creating the share; the Bridge manages capture. Definitions
+  persist in `~/.browser-bridge/shares.json`. Reopen the same URL after a Bridge
+  restart to resume. The hash uses the paired client name and tab ID, `active`, or
+  `browser`. Fixed tab IDs may change after a browser restart.
+- Loopback listeners require no viewer login by default. Non-loopback listeners
+  require `--username viewer` and a password in `BROWSER_BRIDGE_SHARE_PASSWORD`
+  (variable name configurable with `--password-env`). Browsers use HTTP Basic
+  login; use HTTPS on public networks. CLI/extension token auth is unchanged.
+- `--tabs` defaults to a searchable, collapsible, resizable sidebar with a top-tab
+  option, filtering internal pages, blocked URLs and the viewer. Modes are
+  mutually exclusive. Multiple share paths coexist, but one tab has one capture.
+- Click, drag, scroll, direct typing and Chinese IME are supported. All sharing
+  uses WebCodecs VP8, up to 1920 × 1080, with a 2 Mbps / ~15 fps target.
+  No system libraries or transport switches are needed. Reload the updated
+  extension with its `offscreen` permission. Unsupported codecs produce an
+  explicit error; the viewer requires localhost or HTTPS. VP8 is lossy and
+  actual bitrate/frame rate varies. Wide source windows still produce small
+  text when fitted into narrow viewers.
+- Ordinary CLI commands and detach do not interrupt capture. Idle debugger
+  connections detach after **5 minutes**; operations refresh the timeout and
+  live capture keeps it alive.
+
+See [CLI tab sharing](docs/tab-sharing.md) for details.
+
 ## Command Rules
 
 - Run `server ...` commands only on the Bridge Server machine.

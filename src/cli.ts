@@ -405,7 +405,7 @@ program
   .command('eval <expression>')
   .description('Execute JS expression in active tab')
   .option('-t, --tab <id>', 'Target tab ID', parseInt)
-  .option('-k, --keep-attached', 'Keep debugger attached')
+  .option('-k, --keep-attached', 'Keep debugger attached (5-minute idle timeout)')
   .action(async (expression: string, opts) => {
     const result = await evaluateCdpExpression(expression, opts);
     out(result);
@@ -415,7 +415,7 @@ program
   .command('eval-file <file>')
   .description('Execute JS file in active tab')
   .option('-t, --tab <id>', 'Target tab ID', parseInt)
-  .option('-k, --keep-attached', 'Keep debugger attached')
+  .option('-k, --keep-attached', 'Keep debugger attached (5-minute idle timeout)')
   .action(async (file: string, opts) => {
     const code = fs.readFileSync(path.resolve(file), 'utf-8');
     const result = await evaluateCdpExpression(code, opts);
@@ -427,7 +427,7 @@ program
   .description('Query DOM elements')
   .option('-t, --tab <id>', 'Target tab ID', parseInt)
   .option('-l, --limit <n>', 'Max results', parseInt)
-  .option('-k, --keep-attached', 'Keep debugger attached')
+  .option('-k, --keep-attached', 'Keep debugger attached (5-minute idle timeout)')
   .action(async (selector: string, opts) => {
     const result = await evaluateCdpExpression(buildQueryExpression(selector, opts.limit), opts);
     out(result);
@@ -481,11 +481,30 @@ program
   .command('cdp <method> [params]')
   .description('Send raw CDP command')
   .option('-t, --tab <id>', 'Target tab ID', parseInt)
-  .option('-k, --keep-attached', 'Keep debugger attached')
-  .action(async (method: string, paramsJson: string | undefined, opts: { tab?: number; keepAttached?: boolean }) => {
+  .option('-k, --keep-attached', 'Keep debugger attached (5-minute idle timeout)')
+  .option('--session <id>', 'Child CDP session ID (Chrome 125+)')
+  .action(async (method: string, paramsJson: string | undefined, opts: { tab?: number; keepAttached?: boolean; session?: string }) => {
     const params = paramsJson ? JSON.parse(paramsJson) : {};
-    const result = await request('cdp', { method, params, tabId: opts.tab, keepAttached: opts.keepAttached });
+    const result = await request('cdp', { method, params, tabId: opts.tab, keepAttached: opts.keepAttached, sessionId: opts.session });
     out(result);
+  });
+
+program
+  .command('cdp-events')
+  .description('Start/read buffered raw CDP events; 5-minute idle detach')
+  .requiredOption('-t, --tab <id>', 'Target tab ID', Number)
+  .option('--since <cursor>', 'Read events after this cursor', Number)
+  .option('--stream <id>', 'Require the same event stream')
+  .option('--method <method>', 'Filter by exact CDP event method')
+  .option('--session <id>', 'Filter by child CDP session ID')
+  .option('--stop', 'Discard event capture without detaching')
+  .action(async (opts) => {
+    if (!Number.isSafeInteger(opts.tab) || opts.tab < 0) throw new Error('Invalid tab ID');
+    if (opts.since != null && (!Number.isSafeInteger(opts.since) || opts.since < 0)) throw new Error('Invalid event cursor');
+    out(await request('cdp.events', {
+      tabId: opts.tab, since: opts.since, streamId: opts.stream,
+      method: opts.method, sessionId: opts.session, stop: opts.stop,
+    }));
   });
 
 program
@@ -902,6 +921,61 @@ configCmd
     resetConfig();
     console.log('Config cleared.');
   });
+
+const shareCmd = program.command('share').description('View and control a tab in an adaptive browser Canvas');
+
+shareCmd.command('start')
+  .description('Start a persistent WebCodecs viewer on the Bridge server port')
+  .option('-t, --tab <id>', 'Fixed target tab ID (default: current tab)', Number)
+  .option('--client <id>', 'Fixed extension client ID (default: active client)')
+  .option('--follow-active', 'Follow the current tab of the selected browser; keeps the same URL')
+  .option('--tabs', 'Browser viewer with selectable sidebar tabs (or top tabs)')
+  .option('--username <name>', 'HTTP login username (required for non-local listeners)')
+  .option('--password-env <variable>', 'Environment variable holding the login password', 'BROWSER_BRIDGE_SHARE_PASSWORD')
+  .addHelpText('after', '\nOpen or bookmark the printed permanent URL; no fragment or saved browser credentials are required.\nSupports click, drag, scroll, direct typing and IME input.\nRequires WebCodecs VP8, the updated extension, and a localhost or HTTPS viewer.\nUse --tabs for a selectable sidebar, or --follow-active to follow the browser.\nStable URLs survive service restarts on the Bridge port; definitions survive server restarts.\nOther CLI commands can run during sharing without --keep-attached.\nExamples:\n  browser-bridge-cli share start --tab 123\n  browser-bridge-cli share status \'http://127.0.0.1:52853/share/HASH/\'\n  browser-bridge-cli share stop \'http://127.0.0.1:52853/share/HASH/\'')
+  .action(async opts => {
+    if (opts.tab !== undefined && (!Number.isSafeInteger(opts.tab) || opts.tab < 0)) throw new Error('Invalid tab ID');
+    if ([opts.followActive, opts.tabs, opts.tab !== undefined].filter(Boolean).length > 1) throw new Error('Use only one of --tab, --follow-active or --tabs');
+    await ensureServer();
+    const config = resolveConfig(program.opts());
+    let clientId: string | undefined;
+    const call = async (action: string, params: Record<string, unknown> = {}) => {
+      const res = await fetch(`${config.url}/api/execute`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Browser-Bridge': config.token },
+        body: JSON.stringify({ action, params, clientId }), signal: AbortSignal.timeout(35000),
+      });
+      const result = await res.json();
+      if (!res.ok || !result.success) throw new Error(result.error || 'Bridge request failed');
+      return result.data;
+    };
+    const clients = await call('client.list');
+    const client = clients.find((c: any) => c.paired && (opts.client ? c.id === opts.client : c.active));
+    if (!client) throw new Error('No matching connected extension client');
+    clientId = client.id;
+    const password = process.env[opts.passwordEnv];
+    if (opts.username && !password) throw new Error('Missing password environment variable');
+    const session = await call('share.start', { tabId: opts.tab, followActive: !!opts.followActive, tabs: !!opts.tabs, username: opts.username, password: opts.username ? password : undefined });
+    out({ ...session, url: new URL(session.path, config.url).href });
+  });
+
+for (const action of ['status', 'stop']) {
+  shareCmd.command(`${action} <url>`)
+    .description(`${action === 'status' ? 'Inspect' : 'Stop'} a share using its complete viewer URL`)
+    .option('--username <name>', 'HTTP login username')
+    .option('--password-env <variable>', 'Environment variable holding the login password', 'BROWSER_BRIDGE_SHARE_PASSWORD')
+    .action(async (value: string, opts) => {
+      const url = new URL(value);
+      if (!['http:', 'https:'].includes(url.protocol) || !/^\/share\/[a-f0-9]{24}\/$/.test(url.pathname)) throw new Error('Use the complete share URL');
+      const password = process.env[opts.passwordEnv];
+      if (opts.username && !password) throw new Error('Missing password environment variable');
+      url.hash = ''; url.pathname += action; url.search = '';
+      const headers: Record<string, string> = {};
+      if (opts.username) headers.Authorization = 'Basic ' + Buffer.from(opts.username + ':' + password).toString('base64');
+      const res = await fetch(url, { method: action === 'stop' ? 'POST' : 'GET', headers, signal: AbortSignal.timeout(action === 'stop' ? 45000 : 10000), redirect: 'error' });
+      if (!res.ok) throw new Error(`Share ${action} failed: HTTP ${res.status}`);
+      out(await res.json());
+    });
+}
 
 program.parseAsync().catch((err) => {
   console.error(err.message);

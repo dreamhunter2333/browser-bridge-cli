@@ -42,7 +42,7 @@ const stateReady = new Promise((resolve) => {
 // --- Whitelist ---
 
 const TAB_ACTIONS = new Set([
-  'eval', 'eval.file', 'query', 'cdp', 'cdp.detach',
+  'eval', 'eval.file', 'query', 'cdp', 'cdp.detach', 'cdp.events', 'cdp.retain', 'cdp.frames',
   'screenshot', 'screenshot.full', 'pdf',
   'navigate', 'reload', 'tabs.activate', 'tabs.close',
 ]);
@@ -126,7 +126,15 @@ function connect() {
     // Fix: guard ws.send against closed connection
     try {
       if (ws && ws.readyState === 1) {
-        ws.send(JSON.stringify(response));
+        const video = response.data?.frame?.video;
+        if (video) {
+          const data = Uint8Array.from(atob(video.data), c => c.charCodeAt(0));
+          const header = new TextEncoder().encode(JSON.stringify({ ...response, data: { frame: { ...response.data.frame, video: { ...video, data: undefined } } } }));
+          const packet = new Uint8Array(4 + header.length + data.length);
+          new DataView(packet.buffer).setUint32(0, header.length);
+          packet.set(header, 4); packet.set(data, 4 + header.length);
+          ws.send(packet);
+        } else ws.send(JSON.stringify(response));
       }
     } catch {}
   };
@@ -148,6 +156,8 @@ function connect() {
 
 function disconnect() {
   enabled = false;
+  for (const tabId of debuggerLeases.keys()) void releaseDebuggerLease(tabId);
+  cdpEventStreams.clear();
   chrome.alarms.clear(KEEPALIVE_ALARM);
   chrome.alarms.clear(RECONNECT_ALARM);
   chrome.alarms.clear(IDLE_ALARM);
@@ -175,6 +185,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 // --- Message from popup ---
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.target === 'video') return;
   switch (msg.type) {
     case 'enable':
       enabled = true;
@@ -255,6 +266,48 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // --- CDP (chrome.debugger) ---
 
 const attached = new Set();
+const attaching = new Map();
+const debuggerLeases = new Map();
+const debuggerUsers = new Map();
+const pendingDetach = new Set();
+const debuggerIdleTimers = new Map();
+const DEBUGGER_IDLE_TIMEOUT = 5 * 60 * 1000;
+
+function clearDebuggerIdle(tabId) {
+  clearTimeout(debuggerIdleTimers.get(tabId));
+  debuggerIdleTimers.delete(tabId);
+}
+
+function scheduleDebuggerIdle(tabId) {
+  clearDebuggerIdle(tabId);
+  if (!attached.has(tabId) || debuggerLeases.has(tabId) || debuggerUsers.get(tabId)) return;
+  debuggerIdleTimers.set(tabId, setTimeout(() => { void cdpDetach(tabId); }, DEBUGGER_IDLE_TIMEOUT));
+}
+const DEBUGGER_ACTIONS = new Set([
+  'eval', 'eval.file', 'query', 'cdp', 'cdp.detach', 'cdp.events', 'cdp.retain', 'cdp.release', 'cdp.frames',
+  'screenshot', 'screenshot.full', 'pdf', 'cookies.get', 'network.getAll',
+  'navigate', 'reload', 'tabs.activate', 'tabs.get', 'tabs.close',
+]);
+const cdpEventStreams = new Map();
+const MAX_CDP_EVENTS = 500;
+const MAX_CDP_EVENT_BYTES = 2 * 1024 * 1024;
+
+function newCdpEventStream() {
+  return { id: crypto.randomUUID(), cursor: 0, droppedThrough: 0, bytes: 0, events: [], detached: null };
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  const lease = debuggerLeases.get(tabId);
+  if (lease) clearTimeout(lease.timer);
+  debuggerLeases.delete(tabId);
+  if (lease?.capture) void videoMessage({ operation: 'close', id: lease.id }).catch(() => {});
+  pendingDetach.delete(tabId);
+  clearDebuggerIdle(tabId);
+  attached.delete(tabId);
+  cdpEventStreams.delete(tabId);
+  networkLogs.delete(tabId);
+  networkRequests.delete(tabId);
+});
 
 function getNetworkLog(tabId) {
   if (!networkLogs.has(tabId)) networkLogs.set(tabId, []);
@@ -276,6 +329,28 @@ function appendNetworkEntry(tabId, entry) {
 chrome.debugger.onEvent.addListener((source, method, params) => {
   const tabId = source.tabId;
   if (tabId == null || !attached.has(tabId)) return;
+
+  const lease = debuggerLeases.get(tabId);
+  if (!source.sessionId && method === 'Page.screencastFrame' && lease?.capture) {
+    lease.frame = { sequence: ++lease.sequence, data: params.data, metadata: params.metadata };
+    void cdpSend(tabId, 'Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => {});
+    return;
+  }
+
+  const stream = cdpEventStreams.get(tabId);
+  if (stream) {
+    const event = { sequence: ++stream.cursor, method, params, ...(source.sessionId ? { sessionId: source.sessionId } : {}) };
+    const bytes = new TextEncoder().encode(JSON.stringify(event)).length;
+    stream.events.push({ event, bytes });
+    stream.bytes += bytes;
+    while (stream.events.length > MAX_CDP_EVENTS || stream.bytes > MAX_CDP_EVENT_BYTES) {
+      const removed = stream.events.shift();
+      stream.bytes -= removed.bytes;
+      stream.droppedThrough = removed.event.sequence;
+    }
+  }
+
+  if (source.sessionId) return;
 
   if (method === 'Network.requestWillBeSent') {
     appendNetworkEntry(tabId, {
@@ -322,8 +397,12 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
   }
 });
 
-chrome.debugger.onDetach.addListener((source) => {
-  if (source.tabId != null) attached.delete(source.tabId);
+chrome.debugger.onDetach.addListener((source, reason) => {
+  if (source.tabId == null) return;
+  clearDebuggerIdle(source.tabId);
+  attached.delete(source.tabId);
+  const stream = cdpEventStreams.get(source.tabId);
+  if (stream) stream.detached = reason;
 });
 
 function isDebuggableUrl(url) {
@@ -332,20 +411,20 @@ function isDebuggableUrl(url) {
 }
 
 async function ensureAttached(tabId) {
+  if (attaching.has(tabId)) return attaching.get(tabId);
+  const work = attachDebugger(tabId);
+  attaching.set(tabId, work);
+  try { await work; } finally { attaching.delete(tabId); }
+}
+
+async function attachDebugger(tabId) {
   const tab = await chrome.tabs.get(tabId);
   if (!isDebuggableUrl(tab.url)) {
     attached.delete(tabId);
     throw new Error(`Cannot debug tab: URL is ${tab.url}`);
   }
 
-  if (attached.has(tabId)) {
-    try {
-      await cdpSend(tabId, 'Runtime.evaluate', { expression: '1', returnByValue: true });
-      return;
-    } catch {
-      attached.delete(tabId);
-    }
-  }
+  if (attached.has(tabId)) return;
 
   const MAX_RETRIES = 3;
   const RETRY_DELAY = 500;
@@ -372,6 +451,7 @@ async function ensureAttached(tabId) {
 
   if (lastError) throw new Error(`attach failed: ${lastError}`);
   attached.add(tabId);
+  if (cdpEventStreams.get(tabId)?.detached) cdpEventStreams.set(tabId, newCdpEventStream());
 
   try {
     await cdpSend(tabId, 'Runtime.enable');
@@ -381,9 +461,9 @@ async function ensureAttached(tabId) {
   } catch {}
 }
 
-function cdpSend(tabId, method, params) {
+function cdpSend(tabId, method, params, sessionId) {
   return new Promise((resolve, reject) => {
-    chrome.debugger.sendCommand({ tabId }, method, params || {}, (result) => {
+    chrome.debugger.sendCommand({ tabId, ...(sessionId ? { sessionId } : {}) }, method, params || {}, (result) => {
       if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
       else resolve(result);
     });
@@ -424,12 +504,64 @@ async function cdpEval(tabId, expression) {
 }
 
 async function cdpDetach(tabId) {
+  pendingDetach.add(tabId);
+  if (debuggerLeases.has(tabId) || debuggerUsers.get(tabId)) return;
+  pendingDetach.delete(tabId);
+  clearDebuggerIdle(tabId);
   attached.delete(tabId);
+  const stream = cdpEventStreams.get(tabId);
+  if (stream) stream.detached = 'explicit_detach';
   try {
     await new Promise((resolve) => {
       chrome.debugger.detach({ tabId }, () => resolve());
     });
   } catch {}
+}
+
+function refreshDebuggerLease(tabId, leaseId) {
+  const lease = debuggerLeases.get(tabId);
+  if (!lease || lease.releasing || lease.id !== leaseId) throw new Error('Debugger lease expired or changed');
+  clearTimeout(lease.timer);
+  lease.timer = setTimeout(() => { void releaseDebuggerLease(tabId); }, 45000);
+  return lease;
+}
+
+async function videoMessage(message) {
+  let timer;
+  try {
+    return await Promise.race([
+      chrome.runtime.sendMessage({ target: 'video', ...message }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('WebCodecs encoder timed out')), 5000); }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
+
+let creatingVideo;
+async function ensureVideo() {
+  if (!chrome.offscreen) throw new Error('WebCodecs requires the offscreen extension API');
+  if (!creatingVideo) creatingVideo = (async () => {
+    const contexts = await chrome.runtime.getContexts({ contextTypes: ['OFFSCREEN_DOCUMENT'], documentUrls: [chrome.runtime.getURL('video.html')] });
+    if (!contexts.length) await chrome.offscreen.createDocument({ url: 'video.html', reasons: ['BLOBS'], justification: 'Encode tab image blobs with WebCodecs for low-bandwidth sharing' });
+  })().finally(() => { creatingVideo = null; });
+  await creatingVideo;
+  if (!(await videoMessage({ operation: 'probe' }))?.supported) throw new Error('WebCodecs VP8 encoder is unavailable');
+}
+
+async function releaseDebuggerLease(tabId) {
+  const lease = debuggerLeases.get(tabId);
+  if (!lease) return;
+  if (lease.releasing) return lease.releasing;
+  clearTimeout(lease.timer);
+  lease.releasing = (async () => {
+    if (lease.capture) await Promise.allSettled([
+      videoMessage({ operation: 'close', id: lease.id }),
+      cdpSend(tabId, 'Page.stopScreencast'),
+    ]);
+    debuggerLeases.delete(tabId);
+  })();
+  await lease.releasing;
+  if (lease.detachOnRelease || pendingDetach.has(tabId)) await cdpDetach(tabId);
+  else scheduleDebuggerIdle(tabId);
 }
 
 // --- Tab helpers ---
@@ -444,6 +576,22 @@ async function getTargetTabId(tabId) {
 // --- Action handler ---
 
 async function handleAction(action, params) {
+  if (!DEBUGGER_ACTIONS.has(action)) return dispatchAction(action, params);
+  const tabId = await getTargetTabId(params.tabId);
+  clearDebuggerIdle(tabId);
+  debuggerUsers.set(tabId, (debuggerUsers.get(tabId) || 0) + 1);
+  try {
+    return await dispatchAction(action, { ...params, tabId });
+  } finally {
+    const remaining = debuggerUsers.get(tabId) - 1;
+    if (remaining) debuggerUsers.set(tabId, remaining);
+    else debuggerUsers.delete(tabId);
+    if (!remaining && pendingDetach.has(tabId)) await cdpDetach(tabId);
+    if (!remaining) scheduleDebuggerIdle(tabId);
+  }
+}
+
+async function dispatchAction(action, params) {
   await checkWhitelist(action, params);
 
   switch (action) {
@@ -510,6 +658,9 @@ async function handleAction(action, params) {
         status: t.status,
       }));
     }
+
+    case 'tabs.current':
+      return await chrome.tabs.get(await getTargetTabId());
 
     case 'tabs.get':
       return await chrome.tabs.get(params.tabId);
@@ -627,11 +778,114 @@ async function handleAction(action, params) {
       }
     }
 
+    case 'cdp.retain': {
+      const tid = params.tabId;
+      if (debuggerLeases.has(tid)) throw new Error('This tab is already being shared');
+      const lease = { id: crypto.randomUUID(), detachOnRelease: !attached.has(tid), timer: null };
+      debuggerLeases.set(tid, lease);
+      refreshDebuggerLease(tid, lease.id);
+      try {
+        await ensureAttached(tid);
+        return { tabId: tid, leaseId: lease.id };
+      } catch (error) {
+        await releaseDebuggerLease(tid);
+        throw error;
+      }
+    }
+
+    case 'cdp.release': {
+      const lease = debuggerLeases.get(params.tabId);
+      if (!lease) return { ok: true };
+      if (lease.id !== params.leaseId) throw new Error('Debugger lease changed');
+      await releaseDebuggerLease(params.tabId);
+      return { ok: true };
+    }
+
+    case 'cdp.frames': {
+      const tid = params.tabId;
+      const lease = refreshDebuggerLease(tid, params.leaseId);
+      if (params.stop) {
+        await videoMessage({ operation: 'close', id: lease.id });
+        return { stopped: true };
+      }
+      if (params.start) {
+        if (!lease.capture) {
+          await ensureAttached(tid);
+          await cdpSend(tid, 'Page.enable');
+          await ensureVideo();
+          lease.capture = true;
+          lease.sequence = 0;
+          await cdpSend(tid, 'Page.startScreencast', { format: 'png', maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 });
+          if (!lease.frame) {
+            const { cssVisualViewport } = await cdpSend(tid, 'Page.getLayoutMetrics');
+            const { data } = await cdpSend(tid, 'Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+            if (!lease.frame) lease.frame = { sequence: ++lease.sequence, data, metadata: { deviceWidth: cssVisualViewport.clientWidth } };
+          }
+        }
+      }
+      if (!attached.has(tid)) throw new Error('Shared tab debugger disconnected');
+      if (params.start) return { video: true };
+      if (params.idle) return { frame: null };
+      const frame = lease.frame;
+      if (!frame || (frame.sequence === params.since && !params.keyFrame)) return { frame: null };
+      try {
+        const video = await videoMessage({ operation: 'encode', id: lease.id, data: frame.data, keyFrame: !!params.keyFrame });
+        if (!video || video.error) throw new Error(video?.error || 'Encoder unavailable');
+        if (video.unchanged) return { frame: null };
+        return { frame: { sequence: frame.sequence, metadata: frame.metadata, video } };
+      } catch (error) {
+        await videoMessage({ operation: 'close', id: lease.id }).catch(() => {});
+        return { frame: null, error: String(error) };
+      }
+    }
+
+    case 'cdp.events': {
+      const tid = await getTargetTabId(params.tabId);
+      const since = params.since ?? 0;
+      if (!Number.isSafeInteger(since) || since < 0) throw new Error('since must be a non-negative safe integer');
+      let stream = cdpEventStreams.get(tid);
+      if (params.streamId != null && params.streamId !== stream?.id) {
+        throw new Error('CDP event stream changed or stopped; start a new capture before acting');
+      }
+      if (params.stop) {
+        cdpEventStreams.delete(tid);
+        return { tabId: tid, stopped: true };
+      }
+      if (!stream) {
+        stream = newCdpEventStream();
+        cdpEventStreams.set(tid, stream);
+        try {
+          await ensureAttached(tid);
+        } catch (error) {
+          cdpEventStreams.delete(tid);
+          throw error;
+        }
+        stream = cdpEventStreams.get(tid);
+      }
+      if (since > stream.cursor) throw new Error('Cursor is ahead of this CDP event stream');
+      return {
+        tabId: tid,
+        streamId: stream.id,
+        cursor: stream.cursor,
+        dropped: since < stream.droppedThrough,
+        attached: attached.has(tid),
+        detached: stream.detached,
+        events: stream.events.map(item => item.event).filter(event => event.sequence > since
+          && (!params.method || event.method === params.method)
+          && (!params.sessionId || event.sessionId === params.sessionId)),
+      };
+    }
+
     case 'cdp': {
       const tid = await getTargetTabId(params.tabId);
+      if (params.leaseId != null) refreshDebuggerLease(tid, params.leaseId);
+      if (params.sessionId != null && (typeof params.sessionId !== 'string' || !params.sessionId)) {
+        throw new Error('sessionId must be a non-empty string');
+      }
+      if (params.sessionId && !attached.has(tid)) throw new Error('Parent debugger is detached; attach and discover a new child session');
       await ensureAttached(tid);
       try {
-        return await cdpSend(tid, params.method, params.params);
+        return await cdpSend(tid, params.method, params.params, params.sessionId);
       } finally {
         if (params.keepAttached !== true) await cdpDetach(tid);
       }
