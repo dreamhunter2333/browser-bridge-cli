@@ -50,6 +50,12 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
   let leaseId = '', tabId = opts.tabId;
   let poll: Promise<void> | undefined;
   let acquired = false;
+  let viewerIdleTimer: ReturnType<typeof setTimeout>;
+  function armViewerIdle() {
+    clearTimeout(viewerIdleTimer);
+    if (closed) return;
+    viewerIdleTimer = setTimeout(() => { void stop(); }, 30 * 60 * 1000);
+  }
   const sockets = new Set<WebSocket>();
   const alive = new Set<WebSocket>();
   const heartbeat = setInterval(() => {
@@ -156,6 +162,7 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
           if (m.type !== 'hello' || controller) { ws.close(1008, 'Invalid session or controller already connected'); return; }
           if (m.video !== true) { error(ws, '观看端不支持 WebCodecs VP8，请使用支持的浏览器和 localhost 或 HTTPS', true); ws.close(1003, 'VP8 required'); return; }
           forceKey = true;
+          clearTimeout(viewerIdleTimer);
           clearTimeout(timeout); controller = ws; delivered = latest; tabsPayload = ""; lastTabsAt = 0;
           if (paused) ws.send(JSON.stringify({ type: 'paused', message: paused }));
           return;
@@ -185,6 +192,7 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
       clearTimeout(timeout); sockets.delete(ws); alive.delete(ws);
       if (controller !== ws) return;
       controller = undefined;
+      armViewerIdle();
       inputQueue = inputQueue.then(release).catch(() => {});
     });
   });
@@ -193,6 +201,7 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
     if (stopPromise) { respond?.(); return stopPromise; }
     closed = true;
     clearInterval(heartbeat);
+    clearTimeout(viewerIdleTimer);
     stopPromise = (async () => {
       for (const ws of sockets) ws.terminate();
       const cancelling = acquired ? call('cdp.frames', { tabId, leaseId, stop: true }).catch(() => {}) : Promise.resolve();
@@ -317,6 +326,7 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
     });
     // Cleanup must also work after a failed polling request.
     poll = poll.catch(() => {});
-    return { server, tabId, stop, handleRequest, handleUpgrade };
+    armViewerIdle();
+    return { server, get tabId() { return tabId; }, get connected() { return controller?.readyState === WebSocket.OPEN; }, stop, handleRequest, handleUpgrade };
   } catch (e) { await stop(); throw e; }
 }

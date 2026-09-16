@@ -8,17 +8,16 @@ extension, and `/share/<stable-hash>/` serves viewers and their WebSockets.
 
 ```bash
 browser-bridge-cli server start
-browser-bridge-cli share start --tab 123       # Fixed tab
-browser-bridge-cli share start                 # Pin the current tab once
-browser-bridge-cli share start --follow-active # Follow the browser's active tab
-browser-bridge-cli share start --tabs          # Select tabs in a browser sidebar
+browser-bridge-cli share start                 # Start all three viewer modes
+browser-bridge-cli share links --tab 123       # Get three links; fixed-tab target is optional
 browser-bridge-cli share status 'http://127.0.0.1:52853/share/HASH/'
 browser-bridge-cli share stop 'http://127.0.0.1:52853/share/HASH/'
 ```
 
-Use one mode per command. `--client` selects a connected extension client. The
-command prints a permanent URL and exits; the Bridge manages capture independently
-of the CLI process. No second listener or viewer port is started. `share stop`
+Use `share start` to initialize sharing, and `share links [--tab <id>]` to get
+all three links. Both return `links.tab`, `links.active` and `links.browser`.
+The fixed-tab target defaults to the current tab; `--client` selects the browser.
+Capture starts when a link is opened, independently of the CLI process. No second listener or viewer port is started. `share stop`
 removes that share's saved definition and releases its capture without stopping
 the Bridge or another share.
 
@@ -44,7 +43,7 @@ Passwords are supplied from an environment variable, not embedded in URLs.
 ```bash
 # Set BROWSER_BRIDGE_SHARE_PASSWORD securely in the CLI environment first.
 browser-bridge-cli server start --host 0.0.0.0
-browser-bridge-cli share start --tabs --username viewer
+browser-bridge-cli share start --username viewer
 browser-bridge-cli share status 'http://bridge-host:52853/share/HASH/' --username viewer
 ```
 
@@ -57,7 +56,7 @@ WebSocket upgrades. HTTP Basic credentials need TLS on untrusted networks.
 
 ## Viewer and capture
 
-- Browser mode (`--tabs`) has a searchable sidebar with collapse, resizing and a
+- Browser mode (`links.browser`) has a searchable sidebar with collapse, resizing and a
   top-tab option. It excludes internal pages, whitelist-blocked pages and its own
   viewer. Selecting a tab activates and shares it. Closing it selects another
   available webpage. External tab activation does not change manual selection.
@@ -84,7 +83,7 @@ WebSocket upgrades. HTTP Basic credentials need TLS on untrusted networks.
 
 ## WebCodecs streaming
 
-All three modes (`--tab`, `--follow-active`, `--tabs`) use VP8 streaming by default.
+All three link modes use VP8 streaming by default.
 No transport or JPEG-quality flag is needed. Reload the updated extension first:
 its offscreen document and `offscreen` permission are required.
 
@@ -101,3 +100,7 @@ is lossy, not lossless text streaming.
 Unsupported encoders/decoders and codec errors are reported explicitly. Reconnects
 and tab switches resume with a keyframe. `share status` reports `transport: "vp8"`.
 A secure viewer context (localhost or HTTPS) is required for WebCodecs.
+
+## Viewer idle timeout
+
+Capture stops after 30 continuous minutes without a connected viewer. The timer starts when capture starts, is cancelled after a successful viewer handshake, and restarts when the viewer disconnects. HTTP status requests do not reset it. A connected viewer keeps the share alive even without keyboard or mouse input. On timeout, the capture lease is released, while the saved definition and permanent URL remain. Reopening the link starts capture again. Explicit `share stop` still removes the definition.

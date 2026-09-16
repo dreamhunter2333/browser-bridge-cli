@@ -271,19 +271,21 @@ browser's machine.
 
 ## Live tab sharing
 
+After 30 continuous minutes without a connected viewer, capture stops and its debugger lease is released. The saved URL remains valid and reopens on demand. Connected viewers do not need to send input to keep the share alive.
+
 Sharing reuses the Bridge port (default `52853`) at `/share/<stable-hash>/`.
 There is no second listener or credential in the URL.
 
 ```bash
-browser-bridge-cli share start --tab 123       # Fixed tab
-browser-bridge-cli share start                 # Pin the current tab once
-browser-bridge-cli share start --follow-active # Follow the active tab
-browser-bridge-cli share start --tabs          # Selectable sidebar tabs
+browser-bridge-cli share start                 # Start all three viewer modes
+browser-bridge-cli share links --tab 123       # Get three links; fixed-tab target is optional
 browser-bridge-cli share status 'http://127.0.0.1:52853/share/HASH/'
 browser-bridge-cli share stop 'http://127.0.0.1:52853/share/HASH/'
 ```
 
-- The CLI exits after creating the share; the Bridge manages capture. Definitions
+- Both commands return `links.tab`, `links.active` and `links.browser`.
+  `share links --tab <id>` selects the fixed target (default: current tab);
+  `--client` selects the browser. Capture begins when a link is opened. Definitions
   persist in `~/.browser-bridge/shares.json`. Reopen the same URL after a Bridge
   restart to resume. The hash uses the paired client name and tab ID, `active`, or
   `browser`. Fixed tab IDs may change after a browser restart.
@@ -291,9 +293,8 @@ browser-bridge-cli share stop 'http://127.0.0.1:52853/share/HASH/'
   require `--username viewer` and a password in `BROWSER_BRIDGE_SHARE_PASSWORD`
   (variable name configurable with `--password-env`). Browsers use HTTP Basic
   login; use HTTPS on public networks. CLI/extension token auth is unchanged.
-- `--tabs` defaults to a searchable, collapsible, resizable sidebar with a top-tab
-  option, filtering internal pages, blocked URLs and the viewer. Modes are
-  mutually exclusive. Multiple share paths coexist, but one tab has one capture.
+- `links.browser` defaults to a searchable, collapsible, resizable sidebar with a top-tab
+  option, filtering internal pages, blocked URLs and the viewer. Multiple share paths coexist, but one tab has one capture.
 - Click, drag, scroll, direct typing and Chinese IME are supported. All sharing
   uses WebCodecs VP8, up to 1920 × 1080, with a 2 Mbps / ~15 fps target.
   No system libraries or transport switches are needed. Reload the updated

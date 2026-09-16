@@ -36,21 +36,21 @@ npx browser-bridge-cli server gen-pair
 ## Live tab sharing
 
 ```bash
-npx browser-bridge-cli share start --tab <tab-id>
-npx browser-bridge-cli share start --follow-active
-npx browser-bridge-cli share start --tabs
+browser-bridge-cli share start                 # Start all three viewer modes
+browser-bridge-cli share links --tab 123       # Get three links; fixed-tab target is optional
 npx browser-bridge-cli share status '<permanent-viewer-url>'
 npx browser-bridge-cli share stop '<permanent-viewer-url>'
 ```
 
 - Sharing runs on the Bridge server's existing port under `/share/<stable-hash>/`. The CLI prints the URL and exits; Bridge manages capture. Saved definitions survive server restarts. No URL token or browser session storage is required.
-- Default mode pins the current tab once; `--tab` pins an explicit ID. `--follow-active` follows the chosen browser's current tab. `--tabs` provides selectable sidebar/top tabs, search, collapse and resizing. These three options are mutually exclusive; `--client` selects the extension client.
+- `share start` initializes all three modes. `share links [--tab <id>]` returns `links.tab` (fixed tab), `links.active` (follow active tab), and `links.browser` (selectable sidebar/top tabs). The fixed target defaults to the current tab; `--client` selects the browser. Capture starts when a viewer opens a link.
 - The stable hash uses the paired client name and tab ID or mode. Browser restarts may change tab IDs. Reopen the same link after Bridge/browser reconnection; the Bridge must be running. `share stop` removes the saved share definition.
 - Loopback listeners allow viewing without login. Outside loopback, configure `--username` and a password environment variable (default `BROWSER_BRIDGE_SHARE_PASSWORD`, overridden by `--password-env`). Browser HTTP Basic login protects both pages and streams. Do not put credentials into URLs; use HTTPS for public access.
 - Viewer clicks, drag, scroll, direct typing, Chinese IME commits and plain-text paste are supported. Remote clipboard reads are not synchronized. Ctrl+A/Cmd+A are forwarded without forcing select-all. Keep the viewer separate from the source tab.
 - All sharing uses browser-native WebCodecs VP8 in an extension offscreen document, binary video on both network hops, up to 1080p and a 2 Mbps / ~15 fps target. No system libraries or transport flags; reload the updated extension with `offscreen` permission. Unsupported codecs produce explicit errors. The viewer requires localhost or HTTPS; `share status` reports `transport: "vp8"`. Canvas fits available space without resizing the source tab.
+- After 30 continuous minutes without a connected viewer, capture stops and releases its debugger lease; the permanent link remains and restarts capture on opening. A successful viewer connection cancels the timer; disconnect starts a fresh 30 minutes. A connected but inactive viewer does not time out.
 - Existing CLI commands run normally during sharing without extra `--keep-attached`. Ordinary debugger connections detach after five idle minutes; tab operations refresh the timeout and live capture keeps it alive. One capture per source tab; multiple share paths may coexist on one Bridge port.
-- `--tabs` filters internal pages, whitelist-blocked pages and the viewer. Retain sessions requested for manual testing and clean temporary test artifacts when finished.
+- `links.browser` filters internal pages, whitelist-blocked pages and the viewer. Retain sessions requested for manual testing and clean temporary test artifacts when finished.
 
 ## Usage
 

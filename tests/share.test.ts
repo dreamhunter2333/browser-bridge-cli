@@ -30,11 +30,16 @@ test('CLI share: streaming, all tab modes, input, authentication and stop', asyn
     const tabs = (await apiCall(bridge.baseUrl, bridge.token, 'tabs.list')).body.data as any[];
     const tabId = tabs.find(t => t.url === target.url()).id;
     let output = '', errors = '';
-    proc = spawn('node', ['dist/cli.js', '--server', bridge.baseUrl, '--token', bridge.token, 'share', 'start', '--tab', String(tabId)], { env: { ...process.env, ...stateEnv(bridge.stateDir) }, stdio: 'pipe' });
+    proc = spawn('node', ['dist/cli.js', '--server', bridge.baseUrl, '--token', bridge.token, 'share', 'start'], { env: { ...process.env, ...stateEnv(bridge.stateDir) }, stdio: 'pipe' });
     proc.stdout!.on('data', d => output += d);
     proc.stderr!.on('data', d => errors += d);
-    await expect.poll(() => { if (proc!.exitCode !== null && proc!.exitCode !== 0) throw new Error(errors); try { return JSON.parse(output).url; } catch { return ''; } }).not.toBe('');
-    const { url } = JSON.parse(output);
+    await expect.poll(() => { if (proc!.exitCode !== null && proc!.exitCode !== 0) throw new Error(errors); try { return JSON.parse(output).links?.tab?.url; } catch { return ''; } }).not.toBe('');
+    const { links } = JSON.parse(output);
+    const url = links.tab.url;
+    expect(Object.keys(links)).toEqual(['tab', 'active', 'browser']);
+    const lookup = await runCli(['share', 'links', '--tab', String(tabId)], stateEnv(bridge.stateDir));
+    expect(lookup.code, lookup.stderr).toBe(0);
+    expect(JSON.parse(lookup.stdout).links).toEqual(links);
     expect(new URL(url).hash).toBe('');
     const base = new URL(url).origin;
     expect((await fetch(`${base}${new URL(url).pathname}status`)).status).toBe(200);
@@ -60,7 +65,7 @@ test('CLI share: streaming, all tab modes, input, authentication and stop', asyn
     });
     await expect(viewer.locator('#status')).toContainText('已连接');
     await expect(viewer.locator('canvas')).toHaveAttribute('data-transport', 'vp8');
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < 6; i++) {
       const color = i % 2 ? '#10e020' : '#e01020';
       await target.locator('button').evaluate((el, color) => { el.style.background = color; }, color);
       await expect.poll(() => viewer.locator('canvas').evaluate((c: HTMLCanvasElement) => {
@@ -154,9 +159,9 @@ test('CLI share: streaming, all tab modes, input, authentication and stop', asyn
     await freshContext.close();
     expect((await runCli(['info'], stateEnv(bridge.stateDir))).code).toBe(0);
     const authEnv = { ...stateEnv(bridge.stateDir), BROWSER_BRIDGE_SHARE_PASSWORD: 'test-only-password' };
-    const protectedShare = await runCli(['share', 'start', '--tab', String(tabId), '--username', 'test-user'], authEnv);
+    const protectedShare = await runCli(['share', 'links', '--tab', String(tabId), '--username', 'test-user'], authEnv);
     expect(protectedShare.code, protectedShare.stderr).toBe(0);
-    const protectedUrl = JSON.parse(protectedShare.stdout).url;
+    const protectedUrl = JSON.parse(protectedShare.stdout).links.tab.url;
     expect(protectedUrl).toBe(url);
     expect((await fetch(url)).status).toBe(401);
     const authContext = await browser.newContext({ httpCredentials: { username: 'test-user', password: 'test-only-password' } });
@@ -164,11 +169,13 @@ test('CLI share: streaming, all tab modes, input, authentication and stop', asyn
     await authViewer.goto(url);
     await expect(authViewer.locator('canvas')).toBeVisible();
     await authContext.close();
-    expect((await runCli(['share', 'stop', url, '--username', 'test-user'], authEnv)).code).toBe(0);
+    for (const link of Object.values(JSON.parse(protectedShare.stdout).links) as any[]) {
+      expect((await runCli(['share', 'stop', link.url, '--username', 'test-user'], authEnv)).code).toBe(0);
+    }
     {
-      const result = await runCli(['share', 'start', '--tabs'], stateEnv(bridge.stateDir));
+      const result = await runCli(['share', 'start'], stateEnv(bridge.stateDir));
       expect(result.code, result.stderr).toBe(0);
-      const tabsUrl = JSON.parse(result.stdout).url;
+      const tabsUrl = JSON.parse(result.stdout).links.browser.url;
       const tabsViewer = await browser.newPage();
       await tabsViewer.goto(tabsUrl);
       const allTabs = (await apiCall(bridge.baseUrl, bridge.token, 'tabs.list')).body.data as any[];
@@ -185,12 +192,13 @@ test('CLI share: streaming, all tab modes, input, authentication and stop', asyn
       await expect(tabsViewer.locator('#status')).toContainText('串流解码失败');
       await expect(tabsViewer.locator('canvas')).toBeHidden();
       await tabsViewer.close();
-      expect((await runCli(['share', 'stop', tabsUrl], stateEnv(bridge.stateDir))).code).toBe(0);
-      const activeResult = await runCli(['share', 'start', '--follow-active'], stateEnv(bridge.stateDir));
+      const activeResult = await runCli(['share', 'links'], stateEnv(bridge.stateDir));
       expect(activeResult.code, activeResult.stderr).toBe(0);
-      const activeUrl = JSON.parse(activeResult.stdout).url;
+      const activeUrl = JSON.parse(activeResult.stdout).links.active.url;
       const activeViewer = await browser.newPage();
       await activeViewer.goto(activeUrl);
+      await expect(activeViewer.locator('canvas')).toBeVisible();
+      expect((await runCli(['share', 'stop', tabsUrl], stateEnv(bridge.stateDir))).code).toBe(0);
       for (const id of [otherId, tabId]) {
         await apiCall(bridge.baseUrl, bridge.token, 'tabs.activate', { tabId: id });
         await expect.poll(async () => (await (await fetch(activeUrl + 'status')).json()).tabId).toBe(id);

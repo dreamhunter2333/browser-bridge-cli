@@ -238,6 +238,11 @@ async function openShare(definition: ShareDefinition) {
   const work = startShare(async (action, params = {}) => {
     const client = [...clients.values()].find(c => c.paired && c.name === definition.clientName && c.ws.readyState === WebSocket.OPEN);
     if (!client) throw new Error('Shared browser is not connected');
+    if (action === 'cdp.retain') {
+      for (const [otherKey, session] of liveShares) {
+        if (otherKey !== key && shareDefinitions.get(otherKey)?.clientName === definition.clientName && session.tabId === params.tabId && !session.connected) await session.stop();
+      }
+    }
     const result = await sendToClient(client, action, params) as any;
     if (!result.success) throw new Error(result.error || 'Browser command failed');
     return result.data;
@@ -353,25 +358,40 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      if (action === 'share.start') {
+      if (action === 'share.start' || action === 'share.links') {
         const client = getReadyClient(clientId);
         if (!client) throw new Error('No connected browser');
-        if ([params?.tabs, params?.followActive, params?.tabId !== undefined].filter(Boolean).length > 1) throw new Error('Conflicting share modes');
-        const tabId = params?.tabs || params?.followActive ? undefined : params?.tabId ?? (await sendToClient(client, 'tabs.current', {}) as any).data?.id;
-        if (tabId !== undefined && (!Number.isSafeInteger(tabId) || tabId < 0)) throw new Error('Invalid tab ID');
-        const identity = shareIdentity(JSON.stringify([client.name, params?.tabs ? 'browser' : params?.followActive ? 'active' : tabId]));
-        const previous = shareDefinitions.get(identity.basePath);
-        let authHash = previous?.authHash;
+        const current = await sendToClient(client, params?.tabId === undefined ? 'tabs.current' : 'tabs.get', params?.tabId === undefined ? {} : { tabId: params.tabId }) as any;
+        if (!current.success) throw new Error(current.error || 'Cannot resolve tab');
+        const tabId = current.data?.id;
+        if (!Number.isSafeInteger(tabId) || tabId < 0) throw new Error('Invalid current tab ID');
+        let loginHash: string | undefined;
         if (params?.username || params?.password) {
           if (typeof params.username !== 'string' || params.username.includes(':') || typeof params.password !== 'string' || !params.password) throw new Error('Invalid share login');
-          authHash = createHash('sha256').update(params.username + ':' + params.password).digest('hex');
+          loginHash = createHash('sha256').update(params.username + ':' + params.password).digest('hex');
         }
-        if (!localShareHost(HOST) && !authHash) throw new Error('Non-local listeners require --username and --password-env');
-        const definition = { ...identity, clientName: client.name, tabId, tabs: !!params?.tabs, followActive: !!params?.followActive, authHash };
-        if (previous && JSON.stringify(previous) !== JSON.stringify(definition)) await liveShares.get(identity.basePath)?.stop();
-        shareDefinitions.set(identity.basePath, definition); saveShares();
-        await openShare(definition);
-        sendJson(res, 200, { success: true, data: { path: identity.basePath, tabId: tabId ?? null, mode: params?.tabs ? 'browser' : params?.followActive ? 'active' : 'tab', clientId: client.id } });
+        const definitions = [
+          { mode: 'tab', tabId, tabs: false, followActive: false },
+          { mode: 'active', tabId: undefined, tabs: false, followActive: true },
+          { mode: 'browser', tabId: undefined, tabs: true, followActive: false },
+        ].map(({ mode, ...target }) => {
+          const identity = shareIdentity(JSON.stringify([client.name, target.tabId ?? mode]));
+          const authHash = loginHash ?? shareDefinitions.get(identity.basePath)?.authHash;
+          if (!localShareHost(HOST) && !authHash) throw new Error('Non-local listeners require --username and --password-env');
+          return { mode, definition: { ...identity, clientName: client.name, ...target, authHash } };
+        });
+        const links: Record<string, unknown> = {};
+        for (const { mode, definition } of definitions) {
+          const previous = shareDefinitions.get(definition.basePath);
+          if (previous && JSON.stringify(previous) !== JSON.stringify(definition)) {
+            await startingShares.get(definition.basePath);
+            await liveShares.get(definition.basePath)?.stop();
+          }
+          shareDefinitions.set(definition.basePath, definition);
+          links[mode] = { path: definition.basePath, tabId: definition.tabId ?? null };
+        }
+        saveShares();
+        sendJson(res, 200, { success: true, data: { clientId: client.id, links } });
         return;
       }
 

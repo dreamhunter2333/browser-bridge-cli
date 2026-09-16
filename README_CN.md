@@ -269,20 +269,20 @@ npx browser-bridge-cli new-tab https://example.com
 
 ## 标签页远控
 
+共享连续 30 分钟无观看客户端连接时自动停止采集并释放共享占用；固定链接保留，再次打开会恢复。有客户端连接但没有键鼠操作时不会触发此超时。
+
 共享复用 Bridge 的端口（默认 `52853`），通过 `/share/<固定hash>/` 访问，不再监听另一个端口，也不在链接里放 token。
 
 ```bash
-browser-bridge-cli share start --tab 123       # 固定 tab
-browser-bridge-cli share start                 # 固定启动时的 active tab
-browser-bridge-cli share start --follow-active # 跟随 active tab
-browser-bridge-cli share start --tabs          # 可切换标签的侧栏模式
+browser-bridge-cli share start                 # 启动共享，返回三种链接
+browser-bridge-cli share links --tab 123       # 获取三种链接，可选指定固定 Tab
 browser-bridge-cli share status 'http://127.0.0.1:52853/share/HASH/'
 browser-bridge-cli share stop 'http://127.0.0.1:52853/share/HASH/'
 ```
 
-- CLI 创建分享后退出，Bridge 持续管理画面。分享定义保存在 `~/.browser-bridge/shares.json`；重启 Bridge 后再次访问原链接即可恢复。链接 hash 来自已配对客户端名称和 tab ID／`active`／`browser`。指定 tab 的 ID 在浏览器重启后可能变化。
+- `share links` 返回 `links.tab`（固定 Tab）、`links.active`（跟随当前 Tab）、`links.browser`（可切换 Tab）。省略 `--tab` 时取当前 Tab，`--client` 选择浏览器。打开链接后开始采集，CLI 退出不影响共享。分享定义保存在 `~/.browser-bridge/shares.json`；重启 Bridge 后再次访问原链接即可恢复。链接 hash 来自已配对客户端名称和 tab ID／`active`／`browser`。指定 tab 的 ID 在浏览器重启后可能变化。
 - 默认仅监听 localhost，观看无需登录；监听 `0.0.0.0` 等非回环地址时，创建分享必须加 `--username viewer`，并通过 `BROWSER_BRIDGE_SHARE_PASSWORD` 环境变量提供密码（可用 `--password-env` 改变量名）。浏览器使用标准用户名密码登录框，地址里不含凭证。公网使用 HTTPS。
-- `--tabs` 默认左侧栏，支持搜索、收起、调宽和切到顶部，过滤内部页、白名单拦截页及观看页。三个模式互斥；不同分享路径共用端口，但同一源 tab 同时只能被一个分享采集。
+- `links.browser` 默认左侧栏，支持搜索、收起、调宽和切到顶部，过滤内部页、白名单拦截页及观看页。不同分享路径共用端口，但同一源 tab 同时只能被一个分享采集。
 - 三个分享模式统一使用 WebCodecs VP8 串流，无需模式开关或系统库。采集上限 1920 × 1080，目标 2 Mbps、最多约 15 fps，实际码率和帧率随内容和设备变化。
 - 支持点击、拖动、滚动、直接输入及中文输入法。需重新加载包含 `offscreen` 权限的最新版扩展；观看页使用 localhost 或 HTTPS，不支持编解码时明确报错。VP8 为有损编码；源窗口远宽于观看面板时，文字仍会缩小。
 - 共享不会被普通 CLI 命令或 detach 打断。普通调试连接无操作满 **5 分钟自动 detach**，后续操作刷新计时，直播持续保活。

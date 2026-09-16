@@ -136,3 +136,54 @@ test('wheel bursts coalesce without dropping the connection or reordering releas
     expect(calls[1].deltaY).toBe(1000);
   } finally { unblock(); ws.terminate(); await session.stop(); }
 });
+
+for (const mode of [{ tabId: 1 }, { followActive: true }, { tabs: true }]) {
+  test(`viewer idle timeout: ${Object.keys(mode)[0]}`, async () => {
+    const originalSet = globalThis.setTimeout;
+    const originalClear = globalThis.clearTimeout;
+    const timers = new Map<any, () => void>();
+    globalThis.setTimeout = ((fn: any, delay: number, ...args: any[]) => {
+      const timer = originalSet(fn, delay, ...args);
+      if (delay === 30 * 60 * 1000) timers.set(timer, fn);
+      return timer;
+    }) as typeof setTimeout;
+    globalThis.clearTimeout = ((timer: any) => { timers.delete(timer); originalClear(timer); }) as typeof clearTimeout;
+    let released = 0;
+    const call = async (action: string, params: any = {}) => {
+      if (action === 'tabs.current' || action === 'tabs.get') return { id: 1, url: 'https://one.test/' };
+      if (action === 'tabs.list') return [{ id: 1, url: 'https://one.test/' }];
+      if (action === 'whitelist.get') return { whitelistEnabled: false };
+      if (action === 'cdp.retain') return { tabId: 1, leaseId: 'lease' };
+      if (action === 'cdp.frames') return params.start ? { video: true } : { frame: null };
+      if (action === 'cdp.release') released++;
+      return {};
+    };
+    let session: Awaited<ReturnType<typeof startShare>> | undefined;
+    let ws: WebSocket | undefined;
+    try {
+      const identity = shareIdentity('idle-' + Object.keys(mode)[0]);
+      session = await startShare(call, { ...identity, ...mode, host: '127.0.0.1', port: 0 });
+      const address = `http://127.0.0.1:${(session.server.address() as any).port}${identity.basePath}`;
+      expect(timers.size).toBe(1);
+      const initialTimer = [...timers.keys()][0];
+      await fetch(address + 'status');
+      expect(timers.has(initialTimer)).toBe(true);
+      ws = new WebSocket(address.replace('http', 'ws') + 'stream');
+      await new Promise<void>(resolve => ws!.once('open', () => { ws!.send(JSON.stringify({ type: 'hello', video: true })); resolve(); }));
+      await expect.poll(() => timers.size).toBe(0);
+      ws.close();
+      await expect.poll(() => timers.size).toBe(1);
+      expect(timers.has(initialTimer)).toBe(false);
+      const expire = [...timers.values()][0];
+      expire();
+      await session.stop();
+      expect(released).toBeGreaterThan(0);
+      expect(timers.size).toBe(0);
+    } finally {
+      ws?.terminate(); await session?.stop();
+      for (const timer of timers.keys()) originalClear(timer);
+      globalThis.setTimeout = originalSet;
+      globalThis.clearTimeout = originalClear;
+    }
+  });
+}

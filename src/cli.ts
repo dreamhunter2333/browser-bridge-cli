@@ -924,39 +924,39 @@ configCmd
 
 const shareCmd = program.command('share').description('View and control a tab in an adaptive browser Canvas');
 
-shareCmd.command('start')
-  .description('Start a persistent WebCodecs viewer on the Bridge server port')
-  .option('-t, --tab <id>', 'Fixed target tab ID (default: current tab)', Number)
-  .option('--client <id>', 'Fixed extension client ID (default: active client)')
-  .option('--follow-active', 'Follow the current tab of the selected browser; keeps the same URL')
-  .option('--tabs', 'Browser viewer with selectable sidebar tabs (or top tabs)')
-  .option('--username <name>', 'HTTP login username (required for non-local listeners)')
-  .option('--password-env <variable>', 'Environment variable holding the login password', 'BROWSER_BRIDGE_SHARE_PASSWORD')
-  .addHelpText('after', '\nOpen or bookmark the printed permanent URL; no fragment or saved browser credentials are required.\nSupports click, drag, scroll, direct typing and IME input.\nRequires WebCodecs VP8, the updated extension, and a localhost or HTTPS viewer.\nUse --tabs for a selectable sidebar, or --follow-active to follow the browser.\nStable URLs survive service restarts on the Bridge port; definitions survive server restarts.\nOther CLI commands can run during sharing without --keep-attached.\nExamples:\n  browser-bridge-cli share start --tab 123\n  browser-bridge-cli share status \'http://127.0.0.1:52853/share/HASH/\'\n  browser-bridge-cli share stop \'http://127.0.0.1:52853/share/HASH/\'')
-  .action(async opts => {
-    if (opts.tab !== undefined && (!Number.isSafeInteger(opts.tab) || opts.tab < 0)) throw new Error('Invalid tab ID');
-    if ([opts.followActive, opts.tabs, opts.tab !== undefined].filter(Boolean).length > 1) throw new Error('Use only one of --tab, --follow-active or --tabs');
-    await ensureServer();
-    const config = resolveConfig(program.opts());
-    let clientId: string | undefined;
-    const call = async (action: string, params: Record<string, unknown> = {}) => {
-      const res = await fetch(`${config.url}/api/execute`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Browser-Bridge': config.token },
-        body: JSON.stringify({ action, params, clientId }), signal: AbortSignal.timeout(35000),
-      });
-      const result = await res.json();
-      if (!res.ok || !result.success) throw new Error(result.error || 'Bridge request failed');
-      return result.data;
-    };
-    const clients = await call('client.list');
-    const client = clients.find((c: any) => c.paired && (opts.client ? c.id === opts.client : c.active));
-    if (!client) throw new Error('No matching connected extension client');
-    clientId = client.id;
-    const password = process.env[opts.passwordEnv];
-    if (opts.username && !password) throw new Error('Missing password environment variable');
-    const session = await call('share.start', { tabId: opts.tab, followActive: !!opts.followActive, tabs: !!opts.tabs, username: opts.username, password: opts.username ? password : undefined });
-    out({ ...session, url: new URL(session.path, config.url).href });
-  });
+for (const action of ['start', 'links']) {
+  const command = shareCmd.command(action)
+    .description(action === 'start' ? 'Start sharing with all three viewer modes' : 'Get fixed-tab, active-tab and browser-viewer links');
+  if (action === 'links') command.option('-t, --tab <id>', 'Fixed-tab link target (default: current tab)', Number);
+  command
+    .option('--client <id>', 'Fixed extension client ID (default: active client)')
+    .option('--username <name>', 'HTTP login username (required for non-local listeners)')
+    .option('--password-env <variable>', 'Environment variable holding the login password', 'BROWSER_BRIDGE_SHARE_PASSWORD')
+    .addHelpText('after', '\nOpen or bookmark the printed permanent URL; no fragment or saved browser credentials are required.\nSupports click, drag, scroll, direct typing and IME input.\nRequires WebCodecs VP8, the updated extension, and a localhost or HTTPS viewer.\nReturns three links: fixed current tab, follow active tab, and selectable browser tabs.\nStable URLs survive service restarts on the Bridge port; definitions survive server restarts.\nOther CLI commands can run during sharing without --keep-attached.\nExamples:\n  browser-bridge-cli share start\n  browser-bridge-cli share links --tab 123\n  browser-bridge-cli share status \'http://127.0.0.1:52853/share/HASH/\'\n  browser-bridge-cli share stop \'http://127.0.0.1:52853/share/HASH/\'')
+    .action(async opts => {
+      await ensureServer();
+      const config = resolveConfig(program.opts());
+      let clientId: string | undefined;
+      const call = async (action: string, params: Record<string, unknown> = {}) => {
+        const res = await fetch(`${config.url}/api/execute`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Browser-Bridge': config.token },
+          body: JSON.stringify({ action, params, clientId }), signal: AbortSignal.timeout(35000),
+        });
+        const result = await res.json();
+        if (!res.ok || !result.success) throw new Error(result.error || 'Bridge request failed');
+        return result.data;
+      };
+      const clients = await call('client.list');
+      const client = clients.find((c: any) => c.paired && (opts.client ? c.id === opts.client : c.active));
+      if (!client) throw new Error('No matching connected extension client');
+      clientId = client.id;
+      const password = process.env[opts.passwordEnv];
+      if (opts.username && !password) throw new Error('Missing password environment variable');
+      if (opts.tab !== undefined && (!Number.isSafeInteger(opts.tab) || opts.tab < 0)) throw new Error('Invalid tab ID');
+      const session = await call('share.' + action, { tabId: opts.tab, username: opts.username, password: opts.username ? password : undefined });
+      out({ clientId: session.clientId, links: Object.fromEntries(Object.entries(session.links).map(([mode, link]: [string, any]) => [mode, { ...link, url: new URL(link.path, config.url).href }])) });
+    });
+}
 
 for (const action of ['status', 'stop']) {
   shareCmd.command(`${action} <url>`)
