@@ -6,6 +6,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID, randomInt, createHash } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { startShare, shareIdentity, localShareHost, shareAccess } from './share.js';
+import { shareView } from './share-view.js';
 
 // --- CLI args ---
 
@@ -268,8 +269,32 @@ const server = http.createServer(async (req, res) => {
       shareDefinitions.delete(definition.basePath); saveShares();
       sendJson(res, 200, { stopped: true }); return;
     }
-    try { (await openShare(definition)).handleRequest(req, res); }
-    catch { sendJson(res, 503, { error: 'Shared browser or tab unavailable; retry when connected' }); }
+    if (req.method === 'GET' && req.url === definition.basePath) {
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'");
+      res.end(shareView);
+      return;
+    }
+    if (req.method === 'GET' && req.url === definition.basePath + 'status') {
+      const session = liveShares.get(definition.basePath);
+      sendJson(res, 200, {
+        defined: true,
+        running: !!session || startingShares.has(definition.basePath),
+        connected: session?.connected ?? false,
+        capturing: session?.capturing ?? false,
+        attached: session?.capturing ?? false,
+        tabId: session?.tabId ?? definition.tabId ?? null,
+        mode: definition.tabs ? 'browser' : definition.followActive ? 'active' : 'tab',
+        paused: session?.paused ?? '',
+        transport: 'vp8',
+        idleExpiresAt: session?.idleExpiresAt ?? null,
+      });
+      return;
+    }
+    sendJson(res, 404, { error: 'Not found' });
     return;
   }
   if (req.method === 'OPTIONS') {

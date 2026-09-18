@@ -5,6 +5,7 @@ import { shareView } from './share-view.js';
 
 export type BridgeCall = (action: string, params?: Record<string, unknown>) => Promise<any>;
 type Frame = { type: 'frame'; video: { data: Buffer; codec: string; type: string; timestamp: number; width: number; height: number }; tabId: number; geometry: string; width: number; height: number };
+export const SHARE_CHANNEL_IDLE_TIMEOUT = 5 * 60 * 1000;
 
 export function shareIdentity(identity: string) {
   return { basePath: '/share/' + createHash('sha256').update(identity).digest('hex').slice(0, 24) + '/' };
@@ -40,7 +41,7 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
   let forceKey = true;
   let selectedId: number | undefined;
   let selectionInitialized = false;
-  let requestedTab: number | undefined, lastTabsAt = 0, tabList: any[] = [], tabsPayload = "";
+  let requestedTab: number | undefined, lastTabsAt = 0, lastTargetAt = 0, tabList: any[] = [], tabsPayload = "";
   const dynamic = opts.followActive || opts.tabs;
   let closed = false, controller: WebSocket | undefined, latest: Frame | undefined;
   let delivered: Frame | undefined;
@@ -51,10 +52,13 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
   let poll: Promise<void> | undefined;
   let acquired = false;
   let viewerIdleTimer: ReturnType<typeof setTimeout>;
-  function armViewerIdle() {
+  let viewerIdleExpiresAt: number | null = null;
+  let controllerLastAlive = Date.now();
+  function armViewerIdle(idleSince = Date.now()) {
     clearTimeout(viewerIdleTimer);
     if (closed) return;
-    viewerIdleTimer = setTimeout(() => { void stop(); }, 30 * 60 * 1000);
+    viewerIdleExpiresAt = idleSince + SHARE_CHANNEL_IDLE_TIMEOUT;
+    viewerIdleTimer = setTimeout(() => { void stop(); }, Math.max(0, viewerIdleExpiresAt - Date.now()));
   }
   const sockets = new Set<WebSocket>();
   const alive = new Set<WebSocket>();
@@ -82,7 +86,7 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
     }
     res.setHeader('Content-Type', 'application/json');
     if (req.method === 'GET' && req.url === basePath + 'status') {
-      res.end(JSON.stringify({ tabId: tabId ?? null, mode: opts.tabs ? 'browser' : opts.followActive ? 'active' : 'tab', paused, transport: 'vp8', connected: !!controller, running: !closed }));
+      res.end(JSON.stringify({ tabId: tabId ?? null, mode: opts.tabs ? 'browser' : opts.followActive ? 'active' : 'tab', paused, transport: 'vp8', connected: !!controller, capturing: acquired, attached: acquired, running: !closed, defined: true, idleExpiresAt: viewerIdleExpiresAt }));
       return;
     }
     if (req.method === 'POST' && req.url === basePath + 'stop') {
@@ -152,7 +156,10 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
   wss.on('connection', ws => {
     sockets.add(ws);
     alive.add(ws);
-    ws.on('pong', () => alive.add(ws));
+    ws.on('pong', () => {
+      alive.add(ws);
+      if (controller === ws) controllerLastAlive = Date.now();
+    });
     const timeout = setTimeout(() => ws.close(1008, 'Connection setup timeout'), 5000);
     ws.on('error', () => {});
     ws.on('message', raw => {
@@ -162,6 +169,8 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
           if (m.type !== 'hello' || controller) { ws.close(1008, 'Invalid session or controller already connected'); return; }
           if (m.video !== true) { error(ws, '观看端不支持 WebCodecs VP8，请使用支持的浏览器和 localhost 或 HTTPS', true); ws.close(1003, 'VP8 required'); return; }
           forceKey = true;
+          controllerLastAlive = Date.now();
+          viewerIdleExpiresAt = null;
           clearTimeout(viewerIdleTimer);
           clearTimeout(timeout); controller = ws; delivered = latest; tabsPayload = ""; lastTabsAt = 0;
           if (paused) ws.send(JSON.stringify({ type: 'paused', message: paused }));
@@ -192,7 +201,7 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
       clearTimeout(timeout); sockets.delete(ws); alive.delete(ws);
       if (controller !== ws) return;
       controller = undefined;
-      armViewerIdle();
+      armViewerIdle(controllerLastAlive);
       inputQueue = inputQueue.then(release).catch(() => {});
     });
   });
@@ -202,6 +211,7 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
     closed = true;
     clearInterval(heartbeat);
     clearTimeout(viewerIdleTimer);
+    viewerIdleExpiresAt = null;
     stopPromise = (async () => {
       for (const ws of sockets) ws.terminate();
       const cancelling = acquired ? call('cdp.frames', { tabId, leaseId, stop: true }).catch(() => {}) : Promise.resolve();
@@ -219,16 +229,24 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
     })();
     return stopPromise;
   }
+  async function releaseCapture() {
+    await inputQueue;
+    await release().catch(() => {});
+    if (!acquired) return;
+    const releasedTab = tabId;
+    const releasedLease = leaseId;
+    acquired = false;
+    leaseId = '';
+    await call('cdp.release', { tabId: releasedTab, leaseId: releasedLease }).catch(() => {});
+  }
   async function selectTab(id?: number, url?: string) {
     switching = true;
     generation++;
     latest = undefined; delivered = undefined;
     paused = '正在切换共享标签页';
     if (controller?.readyState === WebSocket.OPEN) controller.send(JSON.stringify({ type: 'paused', message: paused }));
-    await inputQueue;
-    await release().catch(() => {});
-    if (acquired) await call('cdp.release', { tabId, leaseId }).catch(() => {});
-    acquired = false; leaseId = ''; tabId = id;
+    await releaseCapture();
+    tabId = id;
     try {
       if (id == null || (url != null && !/^https?:/.test(url) && url !== 'about:blank')) throw new Error('当前标签页不可共享，请切换到网页');
       const lease = await call('cdp.retain', { tabId });
@@ -247,10 +265,21 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
   }
   try {
     if (!opts.server) await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(opts.port, opts.host, () => { server.off('error', reject); resolve(); }); });
-    if (!dynamic) await selectTab(opts.tabId!);
     let sequence = 0;
     poll = (async () => {
       while (!closed) {
+        if (controller?.readyState !== WebSocket.OPEN) {
+          if (acquired) {
+            sequence = 0;
+            await releaseCapture();
+          }
+          await new Promise(resolve => setTimeout(resolve, 100));
+          continue;
+        }
+        if (!dynamic && !acquired) {
+          sequence = 0;
+          await selectTab(opts.tabId!);
+        }
         if (opts.tabs && Date.now() - lastTabsAt >= 500) {
           const policy = await call('whitelist.get');
           tabList = (await call('tabs.list')).filter((t: any) => {
@@ -263,7 +292,8 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
           });
           lastTabsAt = Date.now();
         }
-        if (dynamic) {
+        if (dynamic && (requestedTab !== undefined || !selectionInitialized || Date.now() - lastTargetAt >= 250)) {
+          lastTargetAt = Date.now();
           let target;
           const hasSelection = requestedTab !== undefined;
           if (opts.tabs && requestedTab !== undefined) {
@@ -327,6 +357,16 @@ export async function startShare(call: BridgeCall, opts: { tabId?: number; follo
     // Cleanup must also work after a failed polling request.
     poll = poll.catch(() => {});
     armViewerIdle();
-    return { server, get tabId() { return tabId; }, get connected() { return controller?.readyState === WebSocket.OPEN; }, stop, handleRequest, handleUpgrade };
+    return {
+      server,
+      get tabId() { return tabId; },
+      get connected() { return controller?.readyState === WebSocket.OPEN; },
+      get capturing() { return acquired; },
+      get paused() { return paused; },
+      get idleExpiresAt() { return viewerIdleExpiresAt; },
+      stop,
+      handleRequest,
+      handleUpgrade,
+    };
   } catch (e) { await stop(); throw e; }
 }

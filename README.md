@@ -271,7 +271,7 @@ browser's machine.
 
 ## Live tab sharing
 
-After 30 continuous minutes without a connected viewer, capture stops and its debugger lease is released. The saved URL remains valid and reopens on demand. Connected viewers do not need to send input to keep the share alive.
+Capture and debugger attachment begin only after a viewer completes its WebSocket handshake. When the last viewer disconnects, capture stops and the share lease is released immediately. The idle in-memory channel is destroyed within 5 minutes of its last confirmed viewer liveness; its saved URL remains valid and recreates the channel on demand. Connected viewers do not need to send input to keep the share alive.
 
 Sharing reuses the Bridge port (default `52853`) at `/share/<stable-hash>/`.
 There is no second listener or credential in the URL.
@@ -285,7 +285,7 @@ browser-bridge-cli share stop 'http://127.0.0.1:52853/share/HASH/'
 
 - Both commands return `links.tab`, `links.active` and `links.browser`.
   `share links --tab <id>` selects the fixed target (default: current tab);
-  `--client` selects the browser. Capture begins when a link is opened. Definitions
+  `--client` selects the browser. Capture begins when a compatible viewer connects. Definitions
   persist in `~/.browser-bridge/shares.json`. Reopen the same URL after a Bridge
   restart to resume. The hash uses the paired client name and tab ID, `active`, or
   `browser`. Fixed tab IDs may change after a browser restart.

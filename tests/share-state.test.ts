@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { WebSocket } from 'ws';
-import { shareIdentity, startShare, shareAccess } from '../src/share';
+import { SHARE_CHANNEL_IDLE_TIMEOUT, shareIdentity, startShare, shareAccess } from '../src/share';
 
 test('stable share identity, active switching and stale input isolation', async () => {
   let active = { id: 1, url: 'https://one.test' };
@@ -91,14 +91,17 @@ test('stop cancels an in-flight frame request before waiting for the poll', asyn
     }
     return {};
   };
-  const session = await startShare(call, { ...shareIdentity('cancel-test'), host: '127.0.0.1', port: 0, tabId: 1 });
+  const identity = shareIdentity('cancel-test');
+  const session = await startShare(call, { ...identity, host: '127.0.0.1', port: 0, tabId: 1 });
+  const ws = new WebSocket(`ws://127.0.0.1:${(session.server.address() as any).port}${identity.basePath}stream`);
   try {
+    await new Promise<void>(resolve => ws.once('open', () => { ws.send(JSON.stringify({ type: 'hello', video: true })); resolve(); }));
     await waiting;
     let stopped = false;
     const stop = session.stop().then(() => { stopped = true; });
     await expect.poll(() => stopped, { timeout: 1500 }).toBe(true);
     await stop;
-  } finally { unblock(); await session.stop(); }
+  } finally { unblock(); ws.terminate(); await session.stop(); }
 });
 
 test('wheel bursts coalesce without dropping the connection or reordering release', async () => {
@@ -137,23 +140,51 @@ test('wheel bursts coalesce without dropping the connection or reordering releas
   } finally { unblock(); ws.terminate(); await session.stop(); }
 });
 
+test('browser share waits for a shareable tab before attaching', async () => {
+  let tabs = [{ id: 1, url: 'chrome://extensions/' }];
+  let retained = 0, released = 0;
+  const call = async (action: string, params: any = {}) => {
+    if (action === 'tabs.current') return tabs[0];
+    if (action === 'tabs.list') return tabs;
+    if (action === 'tabs.get') return tabs.find(tab => tab.id === params.tabId);
+    if (action === 'whitelist.get') return { whitelistEnabled: false };
+    if (action === 'cdp.retain') { retained++; return { tabId: params.tabId, leaseId: 'lease' }; }
+    if (action === 'cdp.frames') return params.start ? { video: true } : { frame: null };
+    if (action === 'cdp.release') released++;
+    return {};
+  };
+  const identity = shareIdentity('wait-for-tab');
+  const session = await startShare(call, { ...identity, tabs: true, host: '127.0.0.1', port: 0 });
+  const ws = new WebSocket(`ws://127.0.0.1:${(session.server.address() as any).port}${identity.basePath}stream`);
+  try {
+    await new Promise<void>(resolve => ws.once('open', () => { ws.send(JSON.stringify({ type: 'hello', video: true })); resolve(); }));
+    await expect.poll(() => session.paused).toContain('不可共享');
+    expect(retained).toBe(0);
+    tabs = [{ id: 2, url: 'https://ready.test/' }];
+    await expect.poll(() => retained).toBe(1);
+    expect(session.capturing).toBe(true);
+    ws.close();
+    await expect.poll(() => released).toBe(1);
+  } finally { ws.terminate(); await session.stop(); }
+});
+
 for (const mode of [{ tabId: 1 }, { followActive: true }, { tabs: true }]) {
-  test(`viewer idle timeout: ${Object.keys(mode)[0]}`, async () => {
+  test(`share channel idle timeout: ${Object.keys(mode)[0]}`, async () => {
     const originalSet = globalThis.setTimeout;
     const originalClear = globalThis.clearTimeout;
     const timers = new Map<any, () => void>();
     globalThis.setTimeout = ((fn: any, delay: number, ...args: any[]) => {
       const timer = originalSet(fn, delay, ...args);
-      if (delay === 30 * 60 * 1000) timers.set(timer, fn);
+      if (delay > SHARE_CHANNEL_IDLE_TIMEOUT - 60_000 && delay <= SHARE_CHANNEL_IDLE_TIMEOUT) timers.set(timer, fn);
       return timer;
     }) as typeof setTimeout;
     globalThis.clearTimeout = ((timer: any) => { timers.delete(timer); originalClear(timer); }) as typeof clearTimeout;
-    let released = 0;
+    let retained = 0, released = 0;
     const call = async (action: string, params: any = {}) => {
       if (action === 'tabs.current' || action === 'tabs.get') return { id: 1, url: 'https://one.test/' };
       if (action === 'tabs.list') return [{ id: 1, url: 'https://one.test/' }];
       if (action === 'whitelist.get') return { whitelistEnabled: false };
-      if (action === 'cdp.retain') return { tabId: 1, leaseId: 'lease' };
+      if (action === 'cdp.retain') { retained++; return { tabId: 1, leaseId: 'lease' }; }
       if (action === 'cdp.frames') return params.start ? { video: true } : { frame: null };
       if (action === 'cdp.release') released++;
       return {};
@@ -165,19 +196,22 @@ for (const mode of [{ tabId: 1 }, { followActive: true }, { tabs: true }]) {
       session = await startShare(call, { ...identity, ...mode, host: '127.0.0.1', port: 0 });
       const address = `http://127.0.0.1:${(session.server.address() as any).port}${identity.basePath}`;
       expect(timers.size).toBe(1);
+      expect(retained).toBe(0);
       const initialTimer = [...timers.keys()][0];
       await fetch(address + 'status');
       expect(timers.has(initialTimer)).toBe(true);
+      expect(retained).toBe(0);
       ws = new WebSocket(address.replace('http', 'ws') + 'stream');
       await new Promise<void>(resolve => ws!.once('open', () => { ws!.send(JSON.stringify({ type: 'hello', video: true })); resolve(); }));
       await expect.poll(() => timers.size).toBe(0);
+      await expect.poll(() => retained).toBe(1);
       ws.close();
       await expect.poll(() => timers.size).toBe(1);
+      await expect.poll(() => released).toBe(1);
       expect(timers.has(initialTimer)).toBe(false);
       const expire = [...timers.values()][0];
       expire();
       await session.stop();
-      expect(released).toBeGreaterThan(0);
       expect(timers.size).toBe(0);
     } finally {
       ws?.terminate(); await session?.stop();

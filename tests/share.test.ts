@@ -42,7 +42,10 @@ test('CLI share: streaming, all tab modes, input, authentication and stop', asyn
     expect(JSON.parse(lookup.stdout).links).toEqual(links);
     expect(new URL(url).hash).toBe('');
     const base = new URL(url).origin;
-    expect((await fetch(`${base}${new URL(url).pathname}status`)).status).toBe(200);
+    const idleStatus = await (await fetch(`${base}${new URL(url).pathname}status`)).json();
+    expect(idleStatus).toMatchObject({ defined: true, running: false, connected: false, capturing: false, attached: false, tabId });
+    expect((await fetch(url)).status).toBe(200);
+    expect(await (await fetch(url + 'status')).json()).toMatchObject({ running: false, connected: false, capturing: false });
     const denied = new WebSocket(`${base.replace('http', 'ws')}${new URL(url).pathname}stream`);
     denied.on('open', () => denied.send(JSON.stringify({ type: 'invalid' })));
     expect(await new Promise(resolve => denied.on('close', code => resolve(code)))).toBe(1008);
@@ -65,6 +68,7 @@ test('CLI share: streaming, all tab modes, input, authentication and stop', asyn
     });
     await expect(viewer.locator('#status')).toContainText('已连接');
     await expect(viewer.locator('canvas')).toHaveAttribute('data-transport', 'vp8');
+    await expect.poll(async () => await (await fetch(url + 'status')).json()).toMatchObject({ running: true, connected: true, capturing: true, attached: true });
     for (let i = 0; i < 6; i++) {
       const color = i % 2 ? '#10e020' : '#e01020';
       await target.locator('button').evaluate((el, color) => { el.style.background = color; }, color);
@@ -152,6 +156,7 @@ test('CLI share: streaming, all tab modes, input, authentication and stop', asyn
     await freshViewer.goto(url);
     await expect(freshViewer.locator('#status')).toContainText('不支持 WebCodecs');
     await expect(freshViewer.locator('canvas')).toBeHidden();
+    await expect.poll(async () => await (await fetch(url + 'status')).json()).toMatchObject({ running: true, connected: false, capturing: false, attached: false });
     const stop = await runCli(['share', 'stop', url], stateEnv(bridge.stateDir));
     expect(stop.code).toBe(0);
     await expect.poll(() => proc!.exitCode).toBe(0);

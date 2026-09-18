@@ -17,7 +17,7 @@ browser-bridge-cli share stop 'http://127.0.0.1:52853/share/HASH/'
 Use `share start` to initialize sharing, and `share links [--tab <id>]` to get
 all three links. Both return `links.tab`, `links.active` and `links.browser`.
 The fixed-tab target defaults to the current tab; `--client` selects the browser.
-Capture starts when a link is opened, independently of the CLI process. No second listener or viewer port is started. `share stop`
+Capture starts only after a compatible viewer connects, independently of the CLI process. No second listener or viewer port is started. `share stop`
 removes that share's saved definition and releases its capture without stopping
 the Bridge or another share.
 
@@ -103,4 +103,6 @@ A secure viewer context (localhost or HTTPS) is required for WebCodecs.
 
 ## Viewer idle timeout
 
-Capture stops after 30 continuous minutes without a connected viewer. The timer starts when capture starts, is cancelled after a successful viewer handshake, and restarts when the viewer disconnects. HTTP status requests do not reset it. A connected viewer keeps the share alive even without keyboard or mouse input. On timeout, the capture lease is released, while the saved definition and permanent URL remain. Reopening the link starts capture again. Explicit `share stop` still removes the definition.
+Loading the HTML page or reading `share status` does not attach a debugger. Capture starts only after a viewer completes the WebSocket handshake and a shareable source tab exists. If no source tab is available, the viewer remains connected in a paused state without an attachment.
+
+When the viewer disconnects, the screencast, encoder and share lease are released immediately. The in-memory channel remains available for a quick reconnect and is destroyed no later than 5 minutes after the viewer was last confirmed alive. HTTP status requests do not create or reset the channel. The saved definition and permanent URL remain, so reopening the link recreates the channel. A connected viewer keeps the share alive even without keyboard or mouse input. Explicit `share stop` still removes the definition.
