@@ -260,6 +260,32 @@ npx browser-bridge-cli new-tab https://example.com
 
 </details>
 
+## 鼠标、键盘与可见元素
+
+```bash
+npx browser-bridge-cli query 'button,a,input' --visible -t 123
+npx browser-bridge-cli query 'button,a,input' --in-viewport -l 20 -t 123
+npx browser-bridge-cli click '#submit' -t 123
+npx browser-bridge-cli click --x 100 --y 200 --button right -t 123
+npx browser-bridge-cli click '#item' --count 2 -t 123
+npx browser-bridge-cli hover '#menu' -t 123
+npx browser-bridge-cli move 100 200 -t 123
+npx browser-bridge-cli scroll 500 -t 123
+npx browser-bridge-cli scroll up 300 --selector '.results' -t 123
+npx browser-bridge-cli scroll 0 --delta-x 200 --x 100 --y 200 -t 123
+npx browser-bridge-cli click '#search' -t 123
+npx browser-bridge-cli type '御坂 hello' -t 123
+npx browser-bridge-cli press Enter --key-code 13 -t 123
+npx browser-bridge-cli press a --code KeyA --key-code 65 --modifiers 2 -t 123
+npx browser-bridge-cli press a --code KeyA --key-code 65 --modifiers 4 --commands selectAll -t 123
+```
+
+常用输入无需编写 CDP JSON。选择器使用主文档 CSS 选择器，必须匹配唯一可见元素；`click`、`hover` 自动滚动定位，并拒绝被遮挡的目标。坐标和滚轮增量使用视口 CSS 像素，正数向下／向右。未指定方向或增量时，`scroll` 默认向下滚动 500；显式零增量保持为零。滚轮默认作用于视口中心；嵌套滚动容器可用 `--selector` 或同时指定 `--x/--y` 定位。
+
+`query --visible` 过滤布局不可见元素，保留屏幕外元素；`--in-viewport` 额外要求与视口相交。两者均不检查遮挡，先过滤再应用 `--limit`，返回格式与原有 query 一致。
+
+输入命令均支持 `-t`、`-k`；每条输入命令执行期间固定浏览器客户端及目标标签页，原浏览器断线时命令失败。完成后自动分离调试器，指定 `-k` 可保留连接；跨命令的手动按键序列应保持所选浏览器不变。`type` 向已聚焦输入框插入文本，不触发键盘事件；`press` 直接发送调用方提供的键名、`--code`、`--key-code`、`--modifiers` 位掩码（Alt=1、Control=2、Meta=4、Shift=8），以及可选 `--text` 和原生 `--commands`；键位映射、组合及平台行为均由调用方处理。默认发送按下和释放；分步操作使用 `--phase down -k`、`--phase up`，始终指定同一标签页，中间事件加 `-k`，释放所有键后再分离连接。成功发送返回 `{ "ok": true }`，页面业务结果需另行确认。
+
 ## 原生 CDP 文件上传与拖放
 
 保持原有 `cdp <method> [params]` 接口，新增 `--session <id>`，可直接向 iframe 子会话发送命令（Chrome 125+）。
@@ -334,6 +360,12 @@ npx browser-bridge-cli tab <id>                      # 标签页详情
 npx browser-bridge-cli eval <expr> [-t id] [-k]      # 执行 JS
 npx browser-bridge-cli eval-file <file> [-t id]      # 执行 JS 文件
 npx browser-bridge-cli query <selector> [-t id]      # 查询 DOM
+npx browser-bridge-cli click [selector] [--x px --y px] [-t id]
+npx browser-bridge-cli hover <selector> [-t id]
+npx browser-bridge-cli move <x> <y> [-t id]
+npx browser-bridge-cli scroll [direction] [pixels] [--delta-x px] [--selector css] [-t id]
+npx browser-bridge-cli type <text> [-t id]
+npx browser-bridge-cli press <key> [-t id]
 npx browser-bridge-cli new-tab [url]                 # 新建标签页
 npx browser-bridge-cli close-tab <id>                # 关闭标签页
 npx browser-bridge-cli activate <id>                 # 切换标签页

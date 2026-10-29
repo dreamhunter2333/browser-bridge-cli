@@ -260,6 +260,32 @@ Notes:
 
 </details>
 
+## Mouse, keyboard and visible elements
+
+```bash
+npx browser-bridge-cli query 'button,a,input' --visible -t 123
+npx browser-bridge-cli query 'button,a,input' --in-viewport -l 20 -t 123
+npx browser-bridge-cli click '#submit' -t 123
+npx browser-bridge-cli click --x 100 --y 200 --button right -t 123
+npx browser-bridge-cli click '#item' --count 2 -t 123
+npx browser-bridge-cli hover '#menu' -t 123
+npx browser-bridge-cli move 100 200 -t 123
+npx browser-bridge-cli scroll 500 -t 123
+npx browser-bridge-cli scroll up 300 --selector '.results' -t 123
+npx browser-bridge-cli scroll 0 --delta-x 200 --x 100 --y 200 -t 123
+npx browser-bridge-cli click '#search' -t 123
+npx browser-bridge-cli type '御坂 hello' -t 123
+npx browser-bridge-cli press Enter --key-code 13 -t 123
+npx browser-bridge-cli press a --code KeyA --key-code 65 --modifiers 2 -t 123
+npx browser-bridge-cli press a --code KeyA --key-code 65 --modifiers 4 --commands selectAll -t 123
+```
+
+Use these commands for common input without CDP JSON. Selector targets are CSS selectors in the main document and must match exactly one visible element. `click` and `hover` scroll it into view and reject covered targets. Coordinates and wheel deltas use viewport CSS pixels; positive deltas scroll down/right. With no direction or delta, `scroll` defaults to down 500; explicitly supplied zero deltas stay zero. Wheel events target the viewport center by default; use `--selector` or paired `--x/--y` for nested scroll containers.
+
+`query --visible` filters layout visibility, including offscreen elements; `--in-viewport` also requires viewport intersection. Neither query filter checks occlusion. Filtering happens before `--limit`, and the existing query result format is preserved.
+
+All input commands accept `-t` and `-k`; each input command pins its browser client and target tab for its entire duration, then detaches unless `-k` is used. If the pinned browser disconnects, the command fails. Keep the same selected browser across separate commands in a manual key sequence. `type` inserts text into the focused field without keyboard events. `press` forwards the supplied key, `--code`, `--key-code`, `--modifiers` bitmask (Alt=1, Control=2, Meta=4, Shift=8), optional `--text` and native `--commands`. The caller handles key mapping, combinations and platform behavior; no chord parsing or platform detection is performed. By default it sends down/up; use `--phase down -k` and `--phase up` for caller-managed sequences on the same explicit tab. Use `-k` on intermediate events and detach after releasing every key. Successful input returns `{ "ok": true }`; verify the resulting page state separately.
+
 ## Raw CDP files and events
 
 Raw CDP now accepts `--session <id>` for child iframe sessions (Chrome 125+).
@@ -353,6 +379,12 @@ npx browser-bridge-cli tab <id>                      # Tab details
 npx browser-bridge-cli eval <expr> [-t id] [-k]      # Execute JS
 npx browser-bridge-cli eval-file <file> [-t id]      # Execute JS file
 npx browser-bridge-cli query <selector> [-t id]      # Query DOM
+npx browser-bridge-cli click [selector] [--x px --y px] [-t id]
+npx browser-bridge-cli hover <selector> [-t id]
+npx browser-bridge-cli move <x> <y> [-t id]
+npx browser-bridge-cli scroll [direction] [pixels] [--delta-x px] [--selector css] [-t id]
+npx browser-bridge-cli type <text> [-t id]
+npx browser-bridge-cli press <key> [-t id]
 npx browser-bridge-cli new-tab [url]                 # Create tab
 npx browser-bridge-cli close-tab <id>                # Close tab
 npx browser-bridge-cli activate <id>                 # Switch tab

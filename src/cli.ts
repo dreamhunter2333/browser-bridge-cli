@@ -78,24 +78,24 @@ function readOptionalPixel(value: number | string | undefined, name: string): nu
   return Math.ceil(numberValue);
 }
 
-async function sendCdp(tabId: number | undefined, method: string, params: Record<string, unknown> = {}) {
-  return await request('cdp', { tabId, method, params, keepAttached: true });
+async function sendCdp(tabId: number | undefined, method: string, params: Record<string, unknown> = {}, clientId?: string) {
+  return await request('cdp', { tabId, method, params, keepAttached: true }, clientId);
 }
 
-async function detachCdp(tabId: number | undefined) {
-  await request('cdp.detach', { tabId }).catch(() => {});
+async function detachCdp(tabId: number | undefined, clientId?: string) {
+  await request('cdp.detach', { tabId }, clientId).catch(() => {});
 }
 
 async function evaluateCdpExpression(
   expression: string,
-  opts: { tab?: number; keepAttached?: boolean } = {}
+  opts: { tab?: number; keepAttached?: boolean; clientId?: string } = {}
 ): Promise<unknown> {
   try {
     const result = await sendCdp(opts.tab, 'Runtime.evaluate', {
       expression,
       returnByValue: true,
       awaitPromise: true,
-    }) as RuntimeEvalResult;
+    }, opts.clientId) as RuntimeEvalResult;
 
     if (result.exceptionDetails) {
       const error = result.exceptionDetails.exception?.description
@@ -106,7 +106,7 @@ async function evaluateCdpExpression(
 
     return result.result?.value;
   } finally {
-    if (opts.keepAttached !== true) await detachCdp(opts.tab);
+    if (opts.keepAttached !== true) await detachCdp(opts.tab, opts.clientId);
   }
 }
 
@@ -128,14 +128,24 @@ async function getPageMetrics(tabId: number | undefined): Promise<PageMetrics> {
   return JSON.parse(value) as PageMetrics;
 }
 
-function buildQueryExpression(selector: string, limit?: number): string {
+const visibilityHelpers = `
+  const visible = el => el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true })
+    && Array.from(el.getClientRects()).some(r => r.width > 0 && r.height > 0);
+  const inViewport = el => Array.from(el.getClientRects()).some(r =>
+    r.width > 0 && r.height > 0 && r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight);
+`;
+
+function buildQueryExpression(selector: string, limit?: number, visible = false, inViewport = false): string {
   const safeLimit = Number.isFinite(limit) ? limit as number : 50;
   return `JSON.parse(JSON.stringify((() => {
     const els = document.querySelectorAll(${JSON.stringify(selector)});
+    ${visibilityHelpers}
     const out = [];
     const limit = ${safeLimit};
-    for (let i = 0; i < Math.min(els.length, limit); i++) {
-      const el = els[i];
+    for (const el of els) {
+      if (out.length >= limit) break;
+      if (${visible || inViewport} && !visible(el)) continue;
+      if (${inViewport} && !inViewport(el)) continue;
       out.push({
         tag: el.tagName.toLowerCase(),
         id: el.id || undefined,
@@ -148,6 +158,84 @@ function buildQueryExpression(selector: string, limit?: number): string {
     }
     return out;
   })()))`;
+}
+
+type InputOptions = { tab?: number; keepAttached?: boolean; x?: string; y?: string };
+type InputPoint = { x: number; y: number };
+type InputTarget = { tab: number; clientId: string };
+
+function inputNumber(value: string, name: string): number {
+  if (!value.trim() || !Number.isFinite(Number(value))) throw new Error(`Invalid ${name}: ${value}`);
+  return Number(value);
+}
+
+async function withInput(opts: InputOptions, action: (target: InputTarget) => Promise<void>) {
+  if (opts.tab != null && (!Number.isSafeInteger(opts.tab) || opts.tab < 0)) throw new Error('Invalid tab ID');
+  const clients = await request('client.list') as Array<{ id: string; active: boolean; paired: boolean }>;
+  const client = clients.find(client => client.active && client.paired);
+  if (!client) throw new Error('No connected browser');
+  const tab = opts.tab ?? (await request('tabs.current', {}, client.id) as { id: number }).id;
+  const target = { tab, clientId: client.id };
+  try {
+    await action(target);
+    out({ ok: true });
+  } finally {
+    if (!opts.keepAttached) await detachCdp(tab, client.id);
+  }
+}
+
+function readInputCoordinates(selector: string | undefined, opts: InputOptions): InputPoint | undefined {
+  if (selector != null && (opts.x != null || opts.y != null)) throw new Error('Use a selector or --x/--y, not both');
+  if ((opts.x == null) !== (opts.y == null)) throw new Error('Both --x and --y are required');
+  if (opts.x == null || opts.y == null) return undefined;
+  const x = inputNumber(opts.x, 'x'), y = inputNumber(opts.y, 'y');
+  if (x < 0 || y < 0) throw new Error('Coordinates must be non-negative viewport CSS pixels');
+  return { x, y };
+}
+
+async function inputPoint(target: InputTarget, selector?: string, coordinates?: InputPoint): Promise<InputPoint> {
+  if (coordinates) return coordinates;
+  return await evaluateCdpExpression(`(async () => {
+    if (${selector == null}) return { x: innerWidth / 2, y: innerHeight / 2 };
+    ${visibilityHelpers}
+    const matches = Array.from(document.querySelectorAll(${JSON.stringify(selector ?? '')})).filter(visible);
+    if (matches.length !== 1) throw new Error('Expected one visible element, found ' + matches.length);
+    const el = matches[0];
+    el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    if (!el.isConnected || !visible(el)) throw new Error('Element is no longer visible');
+    for (const r of el.getClientRects()) {
+      const left = Math.max(0, r.left), right = Math.min(innerWidth, r.right);
+      const top = Math.max(0, r.top), bottom = Math.min(innerHeight, r.bottom);
+      if (right <= left || bottom <= top) continue;
+      const x = (left + right) / 2, y = (top + bottom) / 2;
+      const hit = document.elementFromPoint(x, y);
+      if (hit && (hit === el || el.contains(hit))) return { x, y };
+    }
+    throw new Error('Element is outside the viewport or covered by another element');
+  })()`, { ...target, keepAttached: true }) as InputPoint;
+}
+
+async function moveToInput(target: InputTarget, selector?: string, coordinates?: InputPoint): Promise<InputPoint> {
+  let point = await inputPoint(target, selector, coordinates);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await sendCdp(target.tab, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...point }, target.clientId);
+    if (selector == null) return point;
+    const next = await inputPoint(target, selector);
+    if (next.x === point.x && next.y === point.y) return point;
+    point = next;
+  }
+  throw new Error('Element did not stay under the pointer');
+}
+
+async function sendInputPair(target: InputTarget, method: string, down: Record<string, unknown>, up: Record<string, unknown>) {
+  try {
+    await sendCdp(target.tab, method, down, target.clientId);
+  } catch (error) {
+    await sendCdp(target.tab, method, up, target.clientId).catch(() => {});
+    throw error;
+  }
+  await sendCdp(target.tab, method, up, target.clientId);
 }
 
 async function printCdpPdf(tabId: number | undefined): Promise<string> {
@@ -427,10 +515,135 @@ program
   .description('Query DOM elements')
   .option('-t, --tab <id>', 'Target tab ID', parseInt)
   .option('-l, --limit <n>', 'Max results', parseInt)
+  .option('--visible', 'Only elements with visible layout (may be offscreen or covered)')
+  .option('--in-viewport', 'Only visible elements intersecting the viewport (may be covered)')
   .option('-k, --keep-attached', 'Keep debugger attached (5-minute idle timeout)')
   .action(async (selector: string, opts) => {
-    const result = await evaluateCdpExpression(buildQueryExpression(selector, opts.limit), opts);
+    if (opts.limit != null && (!Number.isInteger(opts.limit) || opts.limit < 1)) throw new Error('Limit must be a positive integer');
+    const result = await evaluateCdpExpression(buildQueryExpression(selector, opts.limit, opts.visible, opts.inViewport), opts);
     out(result);
+  });
+
+program
+  .command('click [selector]')
+  .description('Click one visible CSS match, or viewport --x/--y coordinates')
+  .option('--x <pixels>', 'Viewport x in CSS pixels')
+  .option('--y <pixels>', 'Viewport y in CSS pixels')
+  .option('--button <button>', 'left, right or middle', 'left')
+  .option('--count <n>', 'Click count: 1 or 2', Number, 1)
+  .option('-t, --tab <id>', 'Target tab ID', Number)
+  .option('-k, --keep-attached', 'Keep debugger attached (5-minute idle timeout)')
+  .action(async (selector, opts) => {
+    if (!selector && opts.x == null && opts.y == null) throw new Error('Provide a CSS selector or --x and --y');
+    if (!['left', 'right', 'middle'].includes(opts.button)) throw new Error('Button must be left, right or middle');
+    if (![1, 2].includes(opts.count)) throw new Error('Click count must be 1 or 2');
+    const coordinates = readInputCoordinates(selector, opts);
+    await withInput(opts, async target => {
+      for (let clickCount = 1; clickCount <= opts.count; clickCount++) {
+        const point = await moveToInput(target, selector, coordinates);
+        await sendInputPair(target, 'Input.dispatchMouseEvent', {
+          type: 'mousePressed', ...point, button: opts.button,
+          buttons: ({ left: 1, right: 2, middle: 4 } as Record<string, number>)[opts.button], clickCount,
+        }, {
+          type: 'mouseReleased', ...point, button: opts.button, buttons: 0, clickCount,
+        });
+      }
+    });
+  });
+
+program
+  .command('hover <selector>')
+  .description('Move the mouse over one visible CSS match; scroll it into view')
+  .option('-t, --tab <id>', 'Target tab ID', Number)
+  .option('-k, --keep-attached', 'Keep debugger attached (5-minute idle timeout)')
+  .action(async (selector, opts) => {
+    await withInput(opts, async target => {
+      await moveToInput(target, selector);
+    });
+  });
+
+program
+  .command('move <x> <y>')
+  .description('Move the mouse to viewport CSS-pixel coordinates')
+  .option('-t, --tab <id>', 'Target tab ID', Number)
+  .option('-k, --keep-attached', 'Keep debugger attached (5-minute idle timeout)')
+  .action(async (x, y, opts) => {
+    const point = readInputCoordinates(undefined, { x, y })!;
+    await withInput(opts, async target => {
+      await sendCdp(target.tab, 'Input.dispatchMouseEvent', { type: 'mouseMoved', ...point }, target.clientId);
+    });
+  });
+
+program
+  .command('scroll [direction] [pixels]')
+  .description('Scroll up/down/left/right (default: down 500), or pass a positive vertical delta')
+  .option('--delta-x <pixels>', 'Horizontal wheel delta')
+  .option('--delta-y <pixels>', 'Vertical wheel delta (accepts negative values)')
+  .option('--selector <css>', 'Scroll over one visible CSS match')
+  .option('--x <pixels>', 'Wheel origin x (default: viewport center)')
+  .option('--y <pixels>', 'Wheel origin y (default: viewport center)')
+  .option('-t, --tab <id>', 'Target tab ID', Number)
+  .option('-k, --keep-attached', 'Keep debugger attached (5-minute idle timeout)')
+  .action(async (direction: string | undefined, pixels: string | undefined, opts) => {
+    const directions: Record<string, [number, number]> = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+    if (pixels != null && !directions[direction!]) throw new Error('Pixels require a direction: up, down, left or right');
+    if (direction != null && opts.deltaY != null) throw new Error('Use a direction/delta argument or --delta-y, not both');
+    const amount = inputNumber(directions[direction!] ? pixels ?? '500' : direction ?? '0', 'deltaY');
+    if (amount < 0) throw new Error('Use up/left or --delta-y for negative scrolling');
+    const [horizontal, vertical] = directions[direction!] ?? [0, 1];
+    const dy = opts.deltaY != null ? inputNumber(opts.deltaY, 'deltaY') : direction == null && opts.deltaX == null ? 500 : vertical * amount;
+    const dx = inputNumber(opts.deltaX ?? '0', 'deltaX') + horizontal * amount;
+    const coordinates = readInputCoordinates(opts.selector, opts);
+    await withInput(opts, async target => {
+      const point = await inputPoint(target, opts.selector, coordinates);
+      await sendCdp(target.tab, 'Input.dispatchMouseEvent', {
+        type: 'mouseWheel', ...point, deltaX: dx, deltaY: dy,
+      }, target.clientId);
+    });
+  });
+
+program
+  .command('type <text>')
+  .description('Insert text into the focused field (supports Unicode; no key events)')
+  .option('-t, --tab <id>', 'Target tab ID', Number)
+  .option('-k, --keep-attached', 'Keep debugger attached (5-minute idle timeout)')
+  .action(async (text, opts) => {
+    await withInput(opts, async target => { await sendCdp(target.tab, 'Input.insertText', { text }, target.clientId); });
+  });
+
+program
+  .command('press <key>')
+  .description('Send a key event; the caller supplies key mapping and modifier combinations')
+  .option('--code <code>', 'Physical key code, e.g. KeyA or Digit1')
+  .option('--key-code <n>', 'Windows virtual key code', Number)
+  .option('--modifiers <mask>', 'CDP bitmask: Alt=1, Control=2, Meta=4, Shift=8', Number, 0)
+  .option('--text <text>', 'Text produced on key down (otherwise sends rawKeyDown)')
+  .option('--commands <names>', 'Comma-separated native editing commands')
+  .option('--phase <phase>', 'press (down/up), down or up; down requires -k', 'press')
+  .option('-t, --tab <id>', 'Target tab ID', Number)
+  .option('-k, --keep-attached', 'Keep debugger attached (5-minute idle timeout)')
+  .action(async (key: string, opts) => {
+    if (!key) throw new Error('Key must not be empty');
+    if (!Number.isInteger(opts.modifiers) || opts.modifiers < 0 || opts.modifiers > 15) throw new Error('Modifiers must be an integer from 0 to 15');
+    if (opts.keyCode != null && (!Number.isInteger(opts.keyCode) || opts.keyCode < 0 || opts.keyCode > 255)) throw new Error('Key code must be an integer from 0 to 255');
+    if (!['press', 'down', 'up'].includes(opts.phase)) throw new Error('Phase must be press, down or up');
+    if (opts.phase === 'down' && !opts.keepAttached) throw new Error('Key down requires --keep-attached; release it with --phase up on the same tab');
+    await withInput(opts, async target => {
+      const params = { key, code: opts.code, modifiers: opts.modifiers, windowsVirtualKeyCode: opts.keyCode };
+      if (opts.phase === 'up') {
+        await sendCdp(target.tab, 'Input.dispatchKeyEvent', { ...params, type: 'keyUp' }, target.clientId);
+        return;
+      }
+      const down = {
+        ...params, type: opts.text != null ? 'keyDown' : 'rawKeyDown', text: opts.text,
+        commands: opts.commands?.split(',').map((name: string) => name.trim()).filter(Boolean),
+      };
+      if (opts.phase === 'down') {
+        await sendCdp(target.tab, 'Input.dispatchKeyEvent', down, target.clientId);
+        return;
+      }
+      await sendInputPair(target, 'Input.dispatchKeyEvent', down, { ...params, type: 'keyUp' });
+    });
   });
 
 program

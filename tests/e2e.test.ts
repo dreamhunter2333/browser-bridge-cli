@@ -527,6 +527,332 @@ test.describe('End-to-end flow', () => {
     }
   });
 
+  test('CLI query filters visible layout and viewport before applying the limit', async () => {
+    const page = await context.newPage();
+    try {
+      await page.setContent(`<div class="item" hidden>hidden</div>
+        <div style="opacity:0"><div class="item">transparent ancestor</div></div>
+        <div class="item" id="onscreen">visible</div>
+        <div class="item" id="offscreen" style="position:absolute;top:4000px">offscreen</div>`);
+      await page.bringToFront();
+      const { body } = await apiCall(s.baseUrl, s.token, 'tabs.current');
+      const cli = (args: string[]) => runCli([...args, '-t', String((body.data as any).id), '--server', s.baseUrl, '--token', s.token]);
+      const all = await cli(['query', '.item']);
+      expect(all.code).toBe(0);
+      expect(JSON.parse(all.stdout)).toHaveLength(4);
+      const visible = await cli(['query', '.item', '--visible']);
+      expect(visible.code).toBe(0);
+      expect(JSON.parse(visible.stdout).map((el: any) => el.id)).toEqual(['onscreen', 'offscreen']);
+      const viewport = await cli(['query', '.item', '--in-viewport', '--limit', '1']);
+      expect(viewport.code).toBe(0);
+      expect(JSON.parse(viewport.stdout).map((el: any) => el.id)).toEqual(['onscreen']);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('CLI input sends trusted clicks, mouse moves, text and complete key presses', async () => {
+    const page = await context.newPage();
+    try {
+      await page.setContent(`<input id="field"><button id="target" style="margin-top:2000px">target</button>
+        <script>
+          window.events = [];
+          for (const type of ['click', 'dblclick', 'contextmenu', 'mousemove', 'keydown', 'keyup']) {
+            document.addEventListener(type, e => {
+              if (type === 'contextmenu') e.preventDefault();
+              events.push({ type, trusted:e.isTrusted, id:e.target.id, x:e.clientX, y:e.clientY, key:e.key, code:e.code, shift:e.shiftKey });
+            });
+          }
+        </script>`);
+      await page.bringToFront();
+      const { body } = await apiCall(s.baseUrl, s.token, 'tabs.current');
+      const cli = async (args: string[]) => {
+        const result = await runCli([...args, '-t', String((body.data as any).id), '--server', s.baseUrl, '--token', s.token]);
+        expect(result.code, result.stderr).toBe(0);
+        expect(JSON.parse(result.stdout)).toEqual({ ok: true });
+      };
+      await cli(['click', '#target', '--count', '2']);
+      await expect.poll(() => page.evaluate(() => (window as any).events.some((e: any) => e.type === 'dblclick' && e.trusted && e.id === 'target'))).toBe(true);
+      await cli(['click', '#target', '--button', 'right']);
+      expect(await page.evaluate(() => (window as any).events.some((e: any) => e.type === 'contextmenu' && e.id === 'target'))).toBe(true);
+      await cli(['hover', '#field']);
+      await cli(['move', '100', '150']);
+      expect(await page.evaluate(() => (window as any).events.some((e: any) => e.type === 'mousemove' && e.x === 100 && e.y === 150))).toBe(true);
+      const box = await page.locator('#field').boundingBox();
+      await cli(['click', '--x', String(box!.x + 10), '--y', String(box!.y + 10)]);
+      await cli(['type', '御坂 hello']);
+      await expect(page.locator('#field')).toHaveValue('御坂 hello');
+      await cli(['press', 'a', '--code', 'KeyA', '--key-code', '65', '--modifiers', process.platform === 'darwin' ? '4' : '2',
+        ...(process.platform === 'darwin' ? ['--commands', 'selectAll'] : [])]);
+      await cli(['type', 'replaced']);
+      await expect(page.locator('#field')).toHaveValue('replaced');
+      await cli(['press', 'Enter', '--code', 'Enter', '--key-code', '13']);
+      expect(await page.evaluate(() => (window as any).events.filter((e: any) => e.key === 'Enter').map((e: any) => e.type))).toEqual(['keydown', 'keyup']);
+      await cli(['press', 'A', '--code', 'KeyA', '--key-code', '65', '--modifiers', '8', '--text', 'A']);
+      await expect(page.locator('#field')).toHaveValue('replacedA');
+      await cli(['press', 'Shift', '--code', 'ShiftLeft', '--key-code', '16', '--modifiers', '8', '--phase', 'down', '-k']);
+      await cli(['press', '!', '--code', 'Digit1', '--key-code', '49', '--modifiers', '8', '--text', '!', '-k']);
+      await cli(['press', 'Shift', '--code', 'ShiftLeft', '--key-code', '16', '--phase', 'up']);
+      await expect(page.locator('#field')).toHaveValue('replacedA!');
+      expect(await page.evaluate(() => (window as any).events.filter((e: any) => e.key === 'Shift').map((e: any) => e.type))).toEqual(['keydown', 'keyup']);
+      expect(await page.evaluate(() => (window as any).events.some((e: any) => e.key === '!' && e.code === 'Digit1' && e.shift))).toBe(true);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('CLI click rechecks the target after hover changes its position or visibility', async () => {
+    const page = await context.newPage();
+    try {
+      await page.setContent(`<button id="wrong" style="position:absolute;left:200px;top:200px;width:100px;height:60px" onclick="window.clicked='wrong'">wrong</button>
+        <button id="target" style="position:absolute;left:200px;top:200px;width:100px;height:60px" onmouseenter="this.style.left='500px'" onclick="window.clicked='target'">target</button>`);
+      await page.bringToFront();
+      const { body } = await apiCall(s.baseUrl, s.token, 'tabs.current');
+      const cli = (args: string[]) => runCli([...args, '-t', String((body.data as any).id), '--server', s.baseUrl, '--token', s.token]);
+      const moved = await cli(['click', '#target']);
+      expect(moved.code, moved.stderr).toBe(0);
+      expect(await page.evaluate(() => (window as any).clicked)).toBe('target');
+
+      await cli(['move', '0', '0']);
+      await page.locator('#target').evaluate(el => {
+        el.style.left = '200px';
+        el.onmouseenter = () => { el.hidden = true; };
+      });
+      await page.evaluate(() => { (window as any).clicked = undefined; });
+      const hidden = await cli(['click', '#target']);
+      expect(hidden.code).toBe(1);
+      expect(await page.evaluate(() => (window as any).clicked)).toBeUndefined();
+
+      await cli(['move', '0', '0']);
+      await page.locator('#target').evaluate(el => {
+        el.hidden = false;
+        el.onmouseenter = () => { el.style.left = el.style.left === '200px' ? '500px' : '200px'; };
+      });
+      const unstable = await cli(['click', '#target']);
+      expect(unstable.code).toBe(1);
+      expect(await page.evaluate(() => (window as any).clicked)).toBeUndefined();
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('CLI invalid pointer arguments preserve an existing debugger event stream', async () => {
+    const page = await context.newPage();
+    let tabId: number | undefined;
+    try {
+      await page.bringToFront();
+      const { body } = await apiCall(s.baseUrl, s.token, 'tabs.current');
+      tabId = (body.data as any).id;
+      const capture = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId });
+      const streamId = (capture.body.data as any).streamId;
+      expect((capture.body.data as any).attached).toBe(true);
+      for (const args of [
+        ['move', 'NaN', '10'],
+        ['click', '--x', '10'],
+        ['click', '--x', 'NaN', '--y', '10'],
+        ['click', '#target', '--x', '10', '--y', '10'],
+        ['scroll', '100', '--x', '10'],
+        ['scroll', '100', '--selector', '#target', '--x', '10', '--y', '10'],
+      ]) {
+        const invalid = await runCli([...args, '-t', String(tabId), '--server', s.baseUrl, '--token', s.token]);
+        expect(invalid.code).toBe(1);
+        const status = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId, streamId });
+        expect(status.body.success).toBe(true);
+        expect((status.body.data as any).attached).toBe(true);
+        expect((status.body.data as any).detached).toBeNull();
+      }
+    } finally {
+      if (tabId != null) await apiCall(s.baseUrl, s.token, 'cdp.detach', { tabId });
+      await page.close();
+    }
+  });
+
+  test('CLI scroll targets nested containers and input rejects ambiguous or covered selectors', async () => {
+    const page = await context.newPage();
+    try {
+      await page.setContent(`<div id="scroller" style="width:250px;height:180px;overflow:auto"><div style="width:1000px;height:2000px">scroll</div></div>
+        <button class="duplicate">one</button><button class="duplicate">two</button>
+        <button id="covered" style="position:absolute;left:400px;top:0;width:100px;height:100px">covered</button>
+        <div style="position:absolute;left:400px;top:0;width:100px;height:100px;background:red"></div>
+        <div style="height:3000px"></div>`);
+      await page.bringToFront();
+      const { body } = await apiCall(s.baseUrl, s.token, 'tabs.current');
+      const cli = (args: string[]) => runCli([...args, '-t', String((body.data as any).id), '--server', s.baseUrl, '--token', s.token]);
+      const down = await cli(['scroll', '350', '--delta-x', '100', '--selector', '#scroller']);
+      expect(down.code, down.stderr).toBe(0);
+      await expect.poll(() => page.locator('#scroller').evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+      await expect.poll(() => page.locator('#scroller').evaluate(el => el.scrollLeft)).toBeGreaterThan(0);
+      const up = await cli(['scroll', 'up', '350', '--selector', '#scroller']);
+      expect(up.code, up.stderr).toBe(0);
+      await expect.poll(() => page.locator('#scroller').evaluate(el => el.scrollTop)).toBe(0);
+      const viewport = await cli(['scroll', '300']);
+      expect(viewport.code, viewport.stderr).toBe(0);
+      await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(0);
+      for (const [args, error] of [
+        [['click', '.duplicate'], 'Expected one visible element, found 2'],
+        [['click', '#missing'], 'Expected one visible element, found 0'],
+        [['click', '#covered'], 'covered by another element'],
+        [['click', '--x', '10'], 'Both --x and --y'],
+        [['move', 'NaN', '10'], 'Invalid x'],
+        [['scroll', 'NaN'], 'Invalid deltaY'],
+        [['press', 'a', '--modifiers', '16'], 'Modifiers must be an integer'],
+        [['press', 'a', '--key-code', '-1'], 'Key code must be an integer'],
+        [['press', 'a', '--phase', 'invalid'], 'Phase must be'],
+        [['press', 'a', '--phase', 'down'], 'Key down requires --keep-attached'],
+      ] as const) {
+        const result = await cli([...args]);
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain(error);
+      }
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('CLI scroll handles defaults, all directions and signed fractional deltas', async () => {
+    const page = await context.newPage();
+    try {
+      await page.setContent(`<div style="width:5000px;height:5000px"></div>
+        <script>window.wheels=[];addEventListener('wheel', e => wheels.push({x:e.deltaX,y:e.deltaY}), {passive:true});</script>`);
+      await page.bringToFront();
+      const { body } = await apiCall(s.baseUrl, s.token, 'tabs.current');
+      for (const [args, expected] of [
+        [[], { x: 0, y: 500 }],
+        [['up', '125'], { x: 0, y: -125 }],
+        [['down', '75'], { x: 0, y: 75 }],
+        [['right', '200'], { x: 200, y: 0 }],
+        [['left', '50'], { x: -50, y: 0 }],
+        [['--delta-x', '-25.5', '--delta-y', '-40.5'], { x: -25.5, y: -40.5 }],
+      ] as const) {
+        await page.evaluate(() => { (window as any).wheels = []; });
+        const result = await runCli(['scroll', ...args, '-t', String((body.data as any).id), '--server', s.baseUrl, '--token', s.token]);
+        expect(result.code, result.stderr).toBe(0);
+        await expect.poll(() => page.evaluate(() => (window as any).wheels)).toEqual([expected]);
+      }
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('CLI explicit zero wheel deltas succeed without moving the page', async () => {
+    const page = await context.newPage();
+    try {
+      await page.setContent('<div style="width:3000px;height:3000px"></div>');
+      await page.bringToFront();
+      const { body } = await apiCall(s.baseUrl, s.token, 'tabs.current');
+      for (const value of ['0', '0.0']) {
+        const result = await runCli(['scroll', '--delta-x', value, '-t', String((body.data as any).id), '--server', s.baseUrl, '--token', s.token]);
+        expect(result.code, result.stderr).toBe(0);
+        await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+        expect(await page.evaluate(() => [scrollX, scrollY])).toEqual([0, 0]);
+      }
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('CLI input honors attachment options after success and page errors', async () => {
+    const page = await context.newPage();
+    let tabId: number | undefined;
+    try {
+      await page.bringToFront();
+      const { body } = await apiCall(s.baseUrl, s.token, 'tabs.current');
+      tabId = (body.data as any).id;
+      for (const [args, code, attached] of [
+        [['move', '10', '10', '-k'], 0, true],
+        [['move', '20', '20'], 0, false],
+        [['hover', '#missing', '-k'], 1, true],
+        [['hover', '#missing'], 1, false],
+      ] as const) {
+        await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId, stop: true });
+        const capture = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId });
+        const result = await runCli([...args, '-t', String(tabId), '--server', s.baseUrl, '--token', s.token]);
+        expect(result.code, result.stderr).toBe(code);
+        const status = await apiCall(s.baseUrl, s.token, 'cdp.events', { tabId, streamId: (capture.body.data as any).streamId });
+        expect(status.body.success).toBe(true);
+        expect((status.body.data as any).attached).toBe(attached);
+      }
+    } finally {
+      if (tabId != null) await apiCall(s.baseUrl, s.token, 'cdp.detach', { tabId });
+      await page.close();
+    }
+  });
+
+  test('CLI explicit tab input leaves the active tab untouched', async () => {
+    const target = await context.newPage();
+    const other = await context.newPage();
+    try {
+      await target.setContent(`<input id="field"><button onclick="document.querySelector('#field').focus()">focus</button>`);
+      await target.bringToFront();
+      const { body } = await apiCall(s.baseUrl, s.token, 'tabs.current');
+      await other.setContent('<input id="other" autofocus>');
+      await other.bringToFront();
+      for (const args of [['click', 'button'], ['type', 'target only']]) {
+        const result = await runCli([...args, '-t', String((body.data as any).id), '--server', s.baseUrl, '--token', s.token]);
+        expect(result.code, result.stderr).toBe(0);
+      }
+      await expect(target.locator('#field')).toHaveValue('target only');
+      await expect(other.locator('#other')).toHaveValue('');
+      const current = await apiCall(s.baseUrl, s.token, 'tabs.current');
+      expect((current.body.data as any).id).not.toBe((body.data as any).id);
+    } finally {
+      await target.close();
+      await other.close();
+    }
+  });
+
+  test('CLI press forwards caller key mapping and separate down/up phases', async () => {
+    const page = await context.newPage();
+    try {
+      await page.setContent(`<input id="field"><script>
+        window.keys=[];
+        for (const type of ['keydown','keyup']) addEventListener(type, e => {
+          if (e.key==='F9') e.preventDefault();
+          keys.push({type,key:e.key,code:e.code,keyCode:e.keyCode,alt:e.altKey,ctrl:e.ctrlKey,meta:e.metaKey,shift:e.shiftKey});
+        });
+      </script>`);
+      await page.bringToFront();
+      await page.locator('#field').focus();
+      const { body } = await apiCall(s.baseUrl, s.token, 'tabs.current');
+      const cli = async (args: string[]) => {
+        const result = await runCli(['press', ...args, '-t', String((body.data as any).id), '--server', s.baseUrl, '--token', s.token]);
+        expect(result.code, result.stderr).toBe(0);
+      };
+      await cli(['F9', '--code', 'F9', '--key-code', '120', '--modifiers', '15', '--phase', 'down', '-k']);
+      expect(await page.evaluate(() => (window as any).keys)).toEqual([
+        { type: 'keydown', key: 'F9', code: 'F9', keyCode: 120, alt: true, ctrl: true, meta: true, shift: true },
+      ]);
+      await cli(['F9', '--code', 'F9', '--key-code', '120', '--phase', 'up']);
+      expect(await page.evaluate(() => (window as any).keys.at(-1))).toEqual(
+        { type: 'keyup', key: 'F9', code: 'F9', keyCode: 120, alt: false, ctrl: false, meta: false, shift: false },
+      );
+      await cli(['q', '--code', 'KeyQ', '--key-code', '81', '--modifiers', '8', '--text', 'q']);
+      await expect(page.locator('#field')).toHaveValue('q');
+      expect(await page.evaluate(() => (window as any).keys.slice(-2).map((e: any) => [e.type,e.key,e.code,e.shift]))).toEqual([
+        ['keydown', 'q', 'KeyQ', true], ['keyup', 'q', 'KeyQ', true],
+      ]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test('CLI double click stops if the first click removes the target', async () => {
+    const page = await context.newPage();
+    try {
+      await page.setContent(`<button id="wrong" style="position:absolute;left:200px;top:200px;width:100px;height:60px" onclick="window.wrongClicked=true">wrong</button>
+        <button id="target" style="position:absolute;left:200px;top:200px;width:100px;height:60px" onclick="window.count=(window.count||0)+1;this.remove()">target</button>`);
+      await page.bringToFront();
+      const { body } = await apiCall(s.baseUrl, s.token, 'tabs.current');
+      const result = await runCli(['click', '#target', '--count', '2', '-t', String((body.data as any).id), '--server', s.baseUrl, '--token', s.token]);
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('Expected one visible element, found 0');
+      expect(await page.evaluate(() => (window as any).count)).toBe(1);
+      expect(await page.evaluate(() => (window as any).wrongClicked)).toBeUndefined();
+    } finally {
+      await page.close();
+    }
+  });
+
   test('raw CDP uploads paths, intercepts file choosers and drops files', async () => {
     const page = await context.newPage();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-upload-'));

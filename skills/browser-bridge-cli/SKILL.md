@@ -97,8 +97,15 @@ npx browser-bridge-cli network -l 10
 # Cookies
 npx browser-bridge-cli cookies -d example.com
 
-# Raw CDP command
-npx browser-bridge-cli cdp "Input.dispatchMouseEvent" '{"type":"mousePressed","x":100,"y":200,"button":"left","clickCount":1}' -t <tab-id>
+# Mouse, wheel and keyboard (no CDP JSON required)
+npx browser-bridge-cli query 'button,a,input' --in-viewport -t <tab-id>
+npx browser-bridge-cli click '#submit' -t <tab-id>
+npx browser-bridge-cli click --x 100 --y 200 --count 2 -t <tab-id>
+npx browser-bridge-cli hover '#menu' -t <tab-id>
+npx browser-bridge-cli move 100 200 -t <tab-id>
+npx browser-bridge-cli scroll 500 --selector '.results' -t <tab-id>
+npx browser-bridge-cli type 'hello' -t <tab-id>
+npx browser-bridge-cli press Enter --key-code 13 -t <tab-id>
 
 # Capture native events BEFORE the action; retains the debugger connection
 npx browser-bridge-cli cdp-events -t <tab-id>
@@ -131,22 +138,24 @@ npx browser-bridge-cli server install-service --host 0.0.0.0 --token xxx
 npx browser-bridge-cli server install-service --uninstall
 ```
 
-### CDP Examples
+### Input and CDP Examples
 
 | Task | Command |
 |------|---------|
-| Click | `npx browser-bridge-cli cdp "Input.dispatchMouseEvent" '{"type":"mousePressed","x":100,"y":200,"button":"left","clickCount":1}'` |
-| Type | `npx browser-bridge-cli cdp "Input.insertText" '{"text":"hello"}'` |
-| Key | `npx browser-bridge-cli cdp "Input.dispatchKeyEvent" '{"type":"keyDown","key":"Enter"}'` |
+| Click | `npx browser-bridge-cli click --x 100 --y 200` |
+| Type | `npx browser-bridge-cli type hello` |
+| Key | `npx browser-bridge-cli press Enter --key-code 13` |
 | DOM | `npx browser-bridge-cli cdp "DOM.getDocument"` |
 | Mobile | `npx browser-bridge-cli cdp "Emulation.setDeviceMetricsOverride" '{"width":375,"height":812,"deviceScaleFactor":3,"mobile":true}'` |
+
+Selector input uses main-document CSS selectors and requires one visible match. `click`/`hover` scroll into view and check the hit target. Coordinates and wheel deltas are viewport CSS pixels. `scroll` with no direction or delta defaults to down 500; explicit zero deltas stay zero. Wheel defaults to the viewport center; use `--selector` or paired `--x/--y` for a nested container. `query --visible` filters layout visibility; `--in-viewport` also requires viewport intersection. Neither checks occlusion; filtering precedes the limit. `type` inserts text into the focused field without key events. `press` forwards caller-supplied `--code`, `--key-code`, `--modifiers` (Alt=1, Control=2, Meta=4, Shift=8), optional `--text` and comma-separated native `--commands`. The caller owns key mapping, combinations and platform behavior. Default phase is down/up; use `--phase down -k` and `--phase up` for manual sequences. Keep the same explicit tab, retain attachment on intermediate events, and detach after releasing every key. Input commands return `{ "ok": true }` on dispatch; verify the resulting page state. Each input command pins its browser client and tab throughout execution, including cleanup, and detaches unless `-k` is used. A disconnected pinned browser causes failure. Keep the selected browser unchanged across separate commands in a manual key sequence.
 
 ## Workflow
 
 1. Always run `info` first to check server and extension status
 2. Use `tabs` to find the target tab ID
 3. Pass `-t <tab-id>` to target a specific tab (omit for active tab)
-4. Use `-k` flag on eval/query/cdp to keep debugger attached for consecutive operations
+4. Use `-k` flag on eval/query/input/cdp to keep debugger attached for consecutive operations
 5. Run `detach` when done with CDP operations to remove the debugger warning bar
 6. The `cdp` command forwards native methods in the CDP domains supported by `chrome.debugger`; unsupported domains are not emulated
 

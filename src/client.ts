@@ -152,13 +152,13 @@ export async function ensureServer(): Promise<void> {
   throw new Error('Failed to start bridge server');
 }
 
-export async function request(action: string, params: Record<string, unknown> = {}): Promise<unknown> {
+export async function request(action: string, params: Record<string, unknown> = {}, clientId?: string): Promise<unknown> {
   await ensureServer();
   const config = resolveConfig(_globalOpts);
   const res = await fetch(`${config.url}/api/execute`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Browser-Bridge': config.token },
-    body: JSON.stringify({ action, params }),
+    body: JSON.stringify({ action, params, clientId }),
   });
   const json = await res.json();
   if (!json.success) {
