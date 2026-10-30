@@ -5,10 +5,10 @@
 <title>Browser Bridge</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-:root { color-scheme: light; --accent: #2563eb; --text: #182338; --muted: #59677b; --line: #e4e9f0; --surface: #f5f7fa; }
+:root { color-scheme: light dark; --accent: #2563eb; --text: #182338; --muted: #59677b; --line: #dde2e9; --surface: #eceff3; --background: #f6f7f9; }
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { width: 380px; }
-body { width: 380px; max-height: 600px; overflow-y: auto; font: 13px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); background: #fff; scrollbar-color: #c4cedc transparent; scrollbar-width: thin; }
+body { width: 380px; max-height: 600px; overflow-y: auto; font: 13px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); background: var(--background); scrollbar-color: #c4cedc transparent; scrollbar-width: thin; }
 ::selection { background: #dbeafe; color: #172554; }
 button, input { font: inherit; }
 button { cursor: pointer; }
@@ -16,7 +16,7 @@ button:disabled { cursor: default; }
 button:focus-visible, summary:focus-visible { outline: 3px solid #93b4fa; outline-offset: 3px; }
 input { caret-color: var(--accent); }
 [hidden] { display: none !important; }
-.app-bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); background: #fff; }
+.app-bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); background: var(--background); }
 .app-bar img { width: 30px; height: 30px; }
 .app-bar h1 { font-size: 17px; font-weight: 650; letter-spacing: -.25px; flex: 1; }
 .version { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -88,6 +88,24 @@ summary::-webkit-details-marker { display: none; }
 summary svg { width: 14px; height: 14px; color: var(--muted); transition: transform 160ms; }
 details[open] summary svg { transform: rotate(90deg); }
 footer { padding: 14px 20px; color: var(--muted); font-size: 12px; }
+@media (prefers-color-scheme: dark) {
+  :root { --text: #e6e9ef; --muted: #a9b3c2; --line: #373d47; --surface: #292d35; --background: #202329; }
+  body { scrollbar-color: #626e80 transparent; }
+  ::selection { background: #284b7c; color: #edf3ff; }
+  .status-icon.on { background: #61bc8b; }
+  .status-icon.warn { background: #e7b65c; }
+  .track { border-color: #8a98ae; background: #414956; }
+  .md-input, .settings-value, .add-row input, .code-boxes input { border-color: #69798e; background: #252930; }
+  input::placeholder { color: #9da9bb; }
+  input:disabled { background: var(--surface); }
+  .code-boxes input.filled { border-color: #7da7f5; background: #273b5e; }
+  .md-btn.filled:disabled { background: #343b46; color: #b0bbc9; }
+  .md-btn.text, .remove-btn, .pair-error, .settings-error { color: #f3a2a2; }
+  .md-btn.text:hover, .pair-error, .settings-error { background: #3b292e; }
+  .paired-badge { color: #80c69d; }
+  .connection-meta code { color: #aebed5; }
+  .empty { background: #3a3124; color: #e8c47d; }
+}
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
 </style>
 </head>
