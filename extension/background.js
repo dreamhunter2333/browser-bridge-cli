@@ -491,14 +491,14 @@ async function showCursor(tabId, input, sessionId) {
       cursor.id = 'browser-bridge-cursor';
       cursor.setAttribute('aria-hidden', 'true');
       cursor.setAttribute('popover', 'manual');
-      cursor.style.cssText = 'all:initial!important;position:fixed!important;left:0!important;top:0!important;width:20px!important;height:28px!important;pointer-events:none!important;z-index:2147483647!important;filter:drop-shadow(0 1px 1px #0f172a40)!important;';
+      cursor.style.cssText = 'all:initial!important;position:fixed!important;left:0!important;top:0!important;width:20px!important;height:20px!important;pointer-events:none!important;z-index:2147483647!important;';
       const shadow = cursor.attachShadow({ mode: 'closed' });
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('width', '20'); svg.setAttribute('height', '28');
-      svg.setAttribute('viewBox', '0 0 20 28');
+      svg.setAttribute('width', '20'); svg.setAttribute('height', '20');
+      svg.setAttribute('viewBox', '3 2.5 24 24');
       svg.style.cssText = 'overflow:visible;pointer-events:none';
       for (const [tag, attributes] of [
-        ['path', { d: 'M1 1V21L6.2 16.5L10.6 25.5L14.1 23.8L9.7 14.9L17 14.5Z', fill: 'currentColor', stroke: 'white', 'stroke-width': 1.5, 'stroke-linejoin': 'round' }],
+        ['path', { d: 'M3 2.5L21 10.3L12.6 13L9.9 21.4Z', fill: 'currentColor', stroke: 'white', 'stroke-width': 1.4, 'stroke-linejoin': 'round' }],
       ]) {
         const child = document.createElementNS('http://www.w3.org/2000/svg', tag);
         for (const [name, value] of Object.entries(attributes)) child.setAttribute(name, String(value));
@@ -515,7 +515,7 @@ async function showCursor(tabId, input, sessionId) {
     cursor.dataset.x = ${JSON.stringify(String(input.x))};
     cursor.dataset.y = ${JSON.stringify(String(input.y))};
     cursor.dataset.pressed = ${JSON.stringify(String(input.type === 'mousePressed' || !!input.buttons))};
-    cursor.style.setProperty('color', cursor.dataset.pressed === 'true' ? '#2563eb' : '#111827', 'important');
+    cursor.style.setProperty('color', cursor.dataset.pressed === 'true' ? '#2563eb' : '#3b82f6', 'important');
     clearTimeout(cursor.__browserBridgeHideTimer);
     cursor.__browserBridgeHideTimer = setTimeout(() => cursor.remove(), 3000);
   })()`;
