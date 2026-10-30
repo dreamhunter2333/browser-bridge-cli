@@ -104,3 +104,34 @@ test('CLI equivalent explicit zero deltas never trigger default vertical scrolli
     stopServer(server);
   }
 });
+
+test('CLI group creation keeps metadata and membership requests on the original browser', async () => {
+  const server = await startServer();
+  const sockets: WebSocket[] = [];
+  const routed: string[] = [];
+  let otherId = '';
+  const group = { id: 777, windowId: 1, title: '', color: 'grey', collapsed: false };
+  try {
+    for (const name of ['a', 'b']) {
+      const browser = await connectBrowser(server, name, async message => {
+        routed.push(name);
+        if (message.action === 'tabs.group') {
+          await apiCall(server.baseUrl, server.token, 'client.switch', { clientId: otherId });
+          return group.id;
+        }
+        if (message.action === 'groups.update') Object.assign(group, message.params.properties);
+        if (message.action === 'tabs.list') return [{ id: 123, groupId: group.id, index: 0 }];
+        return group;
+      });
+      sockets.push(browser.ws);
+      if (name === 'b') otherId = browser.id;
+    }
+    const result = await runCli(['groups', 'create', '123', '--title', 'work', '--color', 'blue', '--server', server.baseUrl, '--token', server.token]);
+    expect(result.code, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ id: 777, title: 'work', color: 'blue', tabIds: [123] });
+    expect(routed).toEqual(['a', 'a', 'a', 'a']);
+  } finally {
+    for (const ws of sockets) ws.terminate();
+    stopServer(server);
+  }
+});

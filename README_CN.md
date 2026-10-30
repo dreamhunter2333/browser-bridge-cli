@@ -260,6 +260,31 @@ npx browser-bridge-cli new-tab https://example.com
 
 </details>
 
+## 标签页分组
+
+```bash
+browser-bridge-cli tabs --json
+browser-bridge-cli tabs --json --group 12
+browser-bridge-cli tabs --json --group -1 --window 1
+browser-bridge-cli groups
+browser-bridge-cli groups list --window 1 --color blue --expanded
+browser-bridge-cli groups get 12
+browser-bridge-cli groups create 101 102 --title 'Work' --color blue
+browser-bridge-cli groups update 12 --title 'Research' --color purple --collapsed
+browser-bridge-cli groups update 12 --expanded
+browser-bridge-cli groups add-tabs 12 103 104
+browser-bridge-cli groups remove-tabs 103
+browser-bridge-cli groups move 12 --index 0
+browser-bridge-cli groups move 12 --window 2 --index -1
+browser-bridge-cli groups delete 12
+```
+
+需要更新后的扩展及 `tabGroups` 权限；本地加载的扩展更新代码后需重新加载。Chrome 和 Edge 均使用浏览器原生分组 API。
+
+`groups` 等同于 `groups list`；查询、创建、更新和移动返回分组属性及按标签栏顺序排列的 `tabIds`。`tabs --json` 显示每个标签页的 `groupId`，`-1` 表示未分组；原有纯文本输出保持不变。列表可按窗口、标题模式、颜色、折叠／展开状态过滤。颜色支持 grey、blue、red、yellow、green、pink、purple、cyan、orange。
+
+创建分组至少需要一个已有标签页。`delete` 解散分组并保留标签页；最后一个标签移出后，空组也会自动消失。`add-tabs` 支持从其他分组或窗口移入标签页。`move` 可将整组移动到普通窗口内的指定位置或另一个普通窗口，索引 `-1` 表示末尾。ID 仅在当前所选浏览器会话内有效，每条分组命令的所有请求固定使用同一浏览器。修改操作会先检查所有受影响标签页的站点白名单。
+
 ## 鼠标、键盘与可见元素
 
 ```bash
@@ -285,6 +310,8 @@ npx browser-bridge-cli press a --code KeyA --key-code 65 --modifiers 4 --command
 `query --visible` 过滤布局不可见元素，保留屏幕外元素；`--in-viewport` 额外要求与视口相交。两者均不检查遮挡，先过滤再应用 `--limit`，返回格式与原有 query 一致。
 
 输入命令均支持 `-t`、`-k`；每条输入命令执行期间固定浏览器客户端及目标标签页，原浏览器断线时命令失败。完成后自动分离调试器，指定 `-k` 可保留连接；跨命令的手动按键序列应保持所选浏览器不变。`type` 向已聚焦输入框插入文本，不触发键盘事件；`press` 直接发送调用方提供的键名、`--code`、`--key-code`、`--modifiers` 位掩码（Alt=1、Control=2、Meta=4、Shift=8），以及可选 `--text` 和原生 `--commands`；键位映射、组合及平台行为均由调用方处理。默认发送按下和释放；分步操作使用 `--phase down -k`、`--phase up`，始终指定同一标签页，中间事件加 `-k`，释放所有键后再分离连接。成功发送返回 `{ "ok": true }`，页面业务结果需另行确认。
+
+自动鼠标输入会在页面显示蓝色光标，按下时有高亮反馈。指示层不会拦截点击，停留在最后位置直到页面导航，并会出现在页面截图与远控画面中，也可显示在模态弹窗上方。实现兼容 Trusted Types，不需要新增 scripting 权限。
 
 ## 原生 CDP 文件上传与拖放
 

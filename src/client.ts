@@ -167,6 +167,13 @@ export async function request(action: string, params: Record<string, unknown> = 
   return json.data;
 }
 
+export async function getActiveClientId(): Promise<string> {
+  const clients = await request('client.list') as Array<{ id: string; active: boolean; paired: boolean }>;
+  const client = clients.find(client => client.active && client.paired);
+  if (!client) throw new Error('No connected browser');
+  return client.id;
+}
+
 export async function health(): Promise<boolean> {
   try {
     const config = resolveConfig(_globalOpts);

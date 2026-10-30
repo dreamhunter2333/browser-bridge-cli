@@ -5,6 +5,7 @@
   "description": "CDP-like browser control via CLI",
   "permissions": [
     "tabs",
+    "tabGroups",
     "debugger",
     "storage",
     "alarms",

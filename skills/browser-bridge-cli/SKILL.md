@@ -150,6 +150,31 @@ npx browser-bridge-cli server install-service --uninstall
 
 Selector input uses main-document CSS selectors and requires one visible match. `click`/`hover` scroll into view and check the hit target. Coordinates and wheel deltas are viewport CSS pixels. `scroll` with no direction or delta defaults to down 500; explicit zero deltas stay zero. Wheel defaults to the viewport center; use `--selector` or paired `--x/--y` for a nested container. `query --visible` filters layout visibility; `--in-viewport` also requires viewport intersection. Neither checks occlusion; filtering precedes the limit. `type` inserts text into the focused field without key events. `press` forwards caller-supplied `--code`, `--key-code`, `--modifiers` (Alt=1, Control=2, Meta=4, Shift=8), optional `--text` and comma-separated native `--commands`. The caller owns key mapping, combinations and platform behavior. Default phase is down/up; use `--phase down -k` and `--phase up` for manual sequences. Keep the same explicit tab, retain attachment on intermediate events, and detach after releasing every key. Input commands return `{ "ok": true }` on dispatch; verify the resulting page state. Each input command pins its browser client and tab throughout execution, including cleanup, and detaches unless `-k` is used. A disconnected pinned browser causes failure. Keep the selected browser unchanged across separate commands in a manual key sequence.
 
+## Tab groups and cursor feedback
+
+Load the updated extension with `tabGroups` permission (reload an unpacked extension). Use `groups list|get|create|update|delete|move|add-tabs|remove-tabs` for native Chrome/Edge group management.
+
+```bash
+browser-bridge-cli tabs --json
+browser-bridge-cli tabs --json --group 12
+browser-bridge-cli tabs --json --group -1 --window 1
+browser-bridge-cli groups
+browser-bridge-cli groups list --window 1 --color blue --expanded
+browser-bridge-cli groups get 12
+browser-bridge-cli groups create 101 102 --title 'Work' --color blue
+browser-bridge-cli groups update 12 --title 'Research' --color purple --collapsed
+browser-bridge-cli groups update 12 --expanded
+browser-bridge-cli groups add-tabs 12 103 104
+browser-bridge-cli groups remove-tabs 103
+browser-bridge-cli groups move 12 --index 0
+browser-bridge-cli groups move 12 --window 2 --index -1
+browser-bridge-cli groups delete 12
+```
+
+Group results include metadata and ordered `tabIds`. `tabs --json` exposes `groupId`; `-1` means ungrouped. `groups list` accepts `--window`, `--title` patterns, `--color`, `--collapsed` or `--expanded`. Group IDs are browser-session scoped. Creation requires existing tabs; delete dissolves the group without closing tabs. Moving the last member out deletes an empty group. Every group command pins its selected browser across requests; mutations check all affected tabs against the whitelist.
+
+Pointer input shows an in-page blue cursor with click feedback. It does not intercept input and remains at the last position until navigation. Screenshots and live shares include the marker, including on modal dialogs and Trusted Types pages.
+
 ## Workflow
 
 1. Always run `info` first to check server and extension status

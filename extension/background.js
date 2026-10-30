@@ -55,16 +55,26 @@ function matchPattern(pattern, url) {
 }
 
 async function checkWhitelist(action, params) {
-  if (!whitelistEnabled || !TAB_ACTIONS.has(action)) return;
+  if (!whitelistEnabled) return;
+  let tabIds;
+  if (action === 'tabs.group' || action === 'tabs.ungroup') {
+    tabIds = Array.isArray(params.tabIds) ? params.tabIds : [params.tabIds];
+    if (action === 'tabs.group' && params.groupId != null) {
+      tabIds = [...tabIds, ...(await chrome.tabs.query({ groupId: params.groupId })).map(tab => tab.id)];
+    }
+  } else if (action === 'groups.update' || action === 'groups.move') {
+    tabIds = (await chrome.tabs.query({ groupId: params.groupId })).map(tab => tab.id);
+  } else {
+    if (!TAB_ACTIONS.has(action)) return;
+    tabIds = [await getTargetTabId(params.tabId)];
+  }
   if (whitelist.length === 0) {
     throw new Error('Whitelist is enabled but empty — all sites blocked. Add patterns or disable whitelist.');
   }
-  const tid = await getTargetTabId(params.tabId);
-  const tab = await chrome.tabs.get(tid);
-  const url = tab.url || '';
-  const allowed = whitelist.some(p => matchPattern(p, url));
-  if (!allowed) {
-    throw new Error(`Blocked by whitelist: ${url}`);
+  for (const tabId of new Set(tabIds)) {
+    const tab = await chrome.tabs.get(tabId);
+    const url = tab.url || '';
+    if (!whitelist.some(p => matchPattern(p, url))) throw new Error(`Blocked by whitelist: ${url}`);
   }
 }
 
@@ -470,6 +480,47 @@ function cdpSend(tabId, method, params, sessionId) {
   });
 }
 
+async function showCursor(tabId, input, sessionId) {
+  if (!['mouseMoved', 'mousePressed', 'mouseReleased', 'mouseWheel'].includes(input?.type)
+    || !Number.isFinite(input.x) || !Number.isFinite(input.y)) return;
+  const expression = `(() => {
+    if (!document.documentElement) return;
+    let cursor = document.getElementById('browser-bridge-cursor');
+    if (!cursor) {
+      cursor = document.createElement('div');
+      cursor.id = 'browser-bridge-cursor';
+      cursor.setAttribute('aria-hidden', 'true');
+      cursor.setAttribute('popover', 'manual');
+      cursor.style.cssText = 'all:initial!important;position:fixed!important;left:0!important;top:0!important;width:32px!important;height:40px!important;pointer-events:none!important;z-index:2147483647!important;';
+      const shadow = cursor.attachShadow({ mode: 'closed' });
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('width', '32'); svg.setAttribute('height', '40');
+      svg.setAttribute('viewBox', '0 0 32 40');
+      svg.style.cssText = 'overflow:visible;pointer-events:none';
+      for (const [tag, attributes] of [
+        ['circle', { cx: 1, cy: 1, r: 12, fill: '#0ea5e9', 'fill-opacity': '.25' }],
+        ['path', { d: 'M1 1V24L7 19L13 31L18 29L12 17L22 16Z', fill: '#0ea5e9', stroke: 'white', 'stroke-width': 2, 'stroke-linejoin': 'round' }],
+      ]) {
+        const child = document.createElementNS('http://www.w3.org/2000/svg', tag);
+        for (const [name, value] of Object.entries(attributes)) child.setAttribute(name, String(value));
+        svg.append(child);
+      }
+      shadow.append(svg);
+      document.documentElement.append(cursor);
+    }
+    if (cursor.showPopover) {
+      if (cursor.matches(':popover-open')) cursor.hidePopover();
+      cursor.showPopover();
+    }
+    cursor.style.setProperty('transform', 'translate(' + ${input.x} + 'px,' + ${input.y} + 'px)', 'important');
+    cursor.dataset.x = ${JSON.stringify(String(input.x))};
+    cursor.dataset.y = ${JSON.stringify(String(input.y))};
+    cursor.dataset.pressed = ${JSON.stringify(String(input.type === 'mousePressed' || !!input.buttons))};
+    cursor.style.setProperty('filter', cursor.dataset.pressed === 'true' ? 'drop-shadow(0 0 6px #0284c7)' : 'none', 'important');
+  })()`;
+  await cdpSend(tabId, 'Runtime.evaluate', { expression }, sessionId);
+}
+
 async function cdpEval(tabId, expression) {
   const MAX_RETRIES = 2;
   for (let i = 1; i <= MAX_RETRIES; i++) {
@@ -661,6 +712,28 @@ async function dispatchAction(action, params) {
 
     case 'tabs.current':
       return await chrome.tabs.get(await getTargetTabId());
+
+    case 'groups.list':
+      return await chrome.tabGroups.query(params);
+
+    case 'groups.get':
+      return await chrome.tabGroups.get(params.groupId);
+
+    case 'groups.update':
+      return await chrome.tabGroups.update(params.groupId, params.properties);
+
+    case 'groups.move':
+      return await chrome.tabGroups.move(params.groupId, params.properties);
+
+    case 'tabs.group':
+      await Promise.all([].concat(params.tabIds).map(id => chrome.tabs.get(id)));
+      if (params.groupId != null) await chrome.tabGroups.get(params.groupId);
+      return await chrome.tabs.group(params);
+
+    case 'tabs.ungroup':
+      await Promise.all([].concat(params.tabIds).map(id => chrome.tabs.get(id)));
+      await chrome.tabs.ungroup(params.tabIds);
+      return { ok: true };
 
     case 'tabs.get':
       return await chrome.tabs.get(params.tabId);
@@ -885,7 +958,9 @@ async function dispatchAction(action, params) {
       if (params.sessionId && !attached.has(tid)) throw new Error('Parent debugger is detached; attach and discover a new child session');
       await ensureAttached(tid);
       try {
-        return await cdpSend(tid, params.method, params.params, params.sessionId);
+        const result = await cdpSend(tid, params.method, params.params, params.sessionId);
+        if (params.method === 'Input.dispatchMouseEvent') await showCursor(tid, params.params, params.sessionId).catch(() => {});
+        return result;
       } finally {
         if (params.keepAttached !== true) await cdpDetach(tid);
       }

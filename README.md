@@ -260,6 +260,31 @@ Notes:
 
 </details>
 
+## Tab groups
+
+```bash
+browser-bridge-cli tabs --json
+browser-bridge-cli tabs --json --group 12
+browser-bridge-cli tabs --json --group -1 --window 1
+browser-bridge-cli groups
+browser-bridge-cli groups list --window 1 --color blue --expanded
+browser-bridge-cli groups get 12
+browser-bridge-cli groups create 101 102 --title 'Work' --color blue
+browser-bridge-cli groups update 12 --title 'Research' --color purple --collapsed
+browser-bridge-cli groups update 12 --expanded
+browser-bridge-cli groups add-tabs 12 103 104
+browser-bridge-cli groups remove-tabs 103
+browser-bridge-cli groups move 12 --index 0
+browser-bridge-cli groups move 12 --window 2 --index -1
+browser-bridge-cli groups delete 12
+```
+
+Requires the updated extension with the `tabGroups` permission; reload a locally loaded extension after updating it. Chrome and Edge use their native tab group APIs.
+
+`groups` is shorthand for `groups list`. List/get/create/update/move return group metadata plus ordered `tabIds`. `tabs --json` includes each tab's `groupId`, with `-1` meaning ungrouped; existing plain-text tab output is preserved. List filters include `--window`, title patterns, color, and collapsed/expanded state. Colors are grey, blue, red, yellow, green, pink, purple, cyan and orange.
+
+Create requires at least one existing tab. `delete` dissolves the group and keeps its tabs open; removing its last tab also removes the group. `add-tabs` can move tabs from another group or window. `move` moves the entire group within a normal window or to another normal window; index `-1` means the end. IDs belong to the selected browser session. Every group command pins the browser throughout its requests. Mutations enforce the site whitelist for every affected tab before applying changes.
+
 ## Mouse, keyboard and visible elements
 
 ```bash
@@ -285,6 +310,8 @@ Use these commands for common input without CDP JSON. Selector targets are CSS s
 `query --visible` filters layout visibility, including offscreen elements; `--in-viewport` also requires viewport intersection. Neither query filter checks occlusion. Filtering happens before `--limit`, and the existing query result format is preserved.
 
 All input commands accept `-t` and `-k`; each input command pins its browser client and target tab for its entire duration, then detaches unless `-k` is used. If the pinned browser disconnects, the command fails. Keep the same selected browser across separate commands in a manual key sequence. `type` inserts text into the focused field without keyboard events. `press` forwards the supplied key, `--code`, `--key-code`, `--modifiers` bitmask (Alt=1, Control=2, Meta=4, Shift=8), optional `--text` and native `--commands`. The caller handles key mapping, combinations and platform behavior; no chord parsing or platform detection is performed. By default it sends down/up; use `--phase down -k` and `--phase up` for caller-managed sequences on the same explicit tab. Use `-k` on intermediate events and detach after releasing every key. Successful input returns `{ "ok": true }`; verify the resulting page state separately.
+
+Automated pointer input displays a blue, click-through cursor in the page, with a glow while pressed. The marker stays at the last position until navigation and appears in page screenshots and live shares, including over modal dialogs. It uses DOM APIs compatible with Trusted Types and adds no scripting permission.
 
 ## Raw CDP files and events
 

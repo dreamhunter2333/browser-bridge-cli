@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { program } from 'commander';
-import { request, health, ensureServer, getBridgeUrl, setGlobalOpts, resolveConfig, pairWithServer, saveConfig, loadConfigFile, resetConfig, isLocalServer, STATE_DIR } from './client.js';
+import { request, health, ensureServer, getBridgeUrl, getActiveClientId, setGlobalOpts, resolveConfig, pairWithServer, saveConfig, loadConfigFile, resetConfig, isLocalServer, STATE_DIR } from './client.js';
+import { parseId, registerGroupCommands } from './groups.js';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as fs from 'node:fs';
@@ -171,16 +172,14 @@ function inputNumber(value: string, name: string): number {
 
 async function withInput(opts: InputOptions, action: (target: InputTarget) => Promise<void>) {
   if (opts.tab != null && (!Number.isSafeInteger(opts.tab) || opts.tab < 0)) throw new Error('Invalid tab ID');
-  const clients = await request('client.list') as Array<{ id: string; active: boolean; paired: boolean }>;
-  const client = clients.find(client => client.active && client.paired);
-  if (!client) throw new Error('No connected browser');
-  const tab = opts.tab ?? (await request('tabs.current', {}, client.id) as { id: number }).id;
-  const target = { tab, clientId: client.id };
+  const clientId = await getActiveClientId();
+  const tab = opts.tab ?? (await request('tabs.current', {}, clientId) as { id: number }).id;
+  const target = { tab, clientId };
   try {
     await action(target);
     out({ ok: true });
   } finally {
-    if (!opts.keepAttached) await detachCdp(tab, client.id);
+    if (!opts.keepAttached) await detachCdp(tab, clientId);
   }
 }
 
@@ -649,14 +648,22 @@ program
 program
   .command('tabs')
   .description('List all tabs')
-  .action(async () => {
-    const tabs = await request('tabs.list') as Array<Record<string, unknown>>;
+  .option('--json', 'Return tab metadata, including groupId (-1 means ungrouped)')
+  .option('--group <id>', 'Filter by group ID; -1 means ungrouped', Number)
+  .option('--window <id>', 'Filter by window ID', parseId)
+  .action(async opts => {
+    if (opts.group != null && (!Number.isSafeInteger(opts.group) || opts.group < -1)) throw new Error('Group ID must be an integer greater than or equal to -1');
+    const tabs = (await request('tabs.list') as Array<Record<string, unknown>>).filter(tab =>
+      (opts.group == null || tab.groupId === opts.group) && (opts.window == null || tab.windowId === opts.window));
+    if (opts.json) { out(tabs); return; }
     for (const t of tabs) {
       const marker = t.active ? '*' : ' ';
       console.log(`${marker} [${t.id}] ${t.title}`);
       console.log(`        ${t.url}`);
     }
   });
+
+registerGroupCommands(program);
 
 program
   .command('tab <id>')
