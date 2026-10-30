@@ -32,6 +32,7 @@ The extension stores the following data in `chrome.storage.local`:
 - Pairing token and client name.
 - Whitelist settings.
 - Idle timeout and retry settings.
+- Operation cursor visibility preference.
 
 The CLI and Bridge Server store their local state under `~/.browser-bridge/`.
 This includes pairing credentials, CLI configuration, and saved share definitions and login settings.

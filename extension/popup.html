@@ -1,196 +1,161 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" rel="stylesheet">
+<title>Browser Bridge</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
+:root { color-scheme: light; --accent: #2563eb; --text: #182338; --muted: #59677b; --line: #e4e9f0; --surface: #f5f7fa; }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { width: 360px; font-family: 'Inter', sans-serif; font-size: 13px; color: #212121; background: #f5f9ff; }
-
-/* App Bar */
-.app-bar { padding: 16px 20px; background: #1976d2; color: #fff; display: flex; align-items: center; justify-content: space-between; }
-.app-bar h3 { font-size: 16px; font-weight: 600; letter-spacing: 0.15px; }
-.app-bar .version { font-size: 11px; opacity: 0.7; background: rgba(255,255,255,0.15); padding: 2px 8px; border-radius: 12px; }
-
-/* Cards */
-.card { margin: 12px 16px; padding: 16px; background: #ffffff; border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.1); }
-
-/* Status */
-.status-row { display: flex; align-items: center; gap: 12px; }
-.status-icon { width: 40px; height: 40px; border-radius: 20px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.status-icon.on { background: #d1fae5; color: #059669; }
-.status-icon.off { background: #f3e8ff; color: #9333ea; }
-.status-icon.warn { background: #fef3c7; color: #d97706; }
-.status-icon .material-icons-outlined { font-size: 22px; }
-.status-info { flex: 1; }
-.status-info .title { font-weight: 600; font-size: 14px; color: #212121; }
-.status-info .subtitle { font-size: 12px; color: #616161; margin-top: 2px; }
-
-/* MD3 Switch */
-.md-switch { position: relative; width: 52px; height: 32px; cursor: pointer; flex-shrink: 0; }
-.md-switch input { display: none; }
-.md-switch .track { position: absolute; inset: 0; background: #e0e0e0; border: 2px solid #9e9e9e; border-radius: 16px; transition: all 0.2s; }
-.md-switch .thumb { position: absolute; width: 16px; height: 16px; left: 8px; top: 8px; background: #9e9e9e; border-radius: 50%; transition: all 0.2s; }
-.md-switch input:checked + .track { background: #1976d2; border-color: #1976d2; }
-.md-switch input:checked + .track .thumb { left: 28px; background: #fff; width: 24px; height: 24px; top: 2px; }
-
-/* Section */
-.section-header { display: flex; align-items: center; justify-content: space-between; }
-.section-label { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: #616161; }
-.section-label .material-icons-outlined { font-size: 18px; color: #1976d2; }
-
-.divider { height: 1px; background: #e0e0e0; margin: 12px 0; }
-
-/* Pairing */
-.pair-section { margin-top: 12px; }
-.pair-hint { font-size: 12px; color: #616161; text-align: center; margin-bottom: 10px; }
-
-.md-input { width: 100%; padding: 10px 14px; border: 1px solid #9e9e9e; border-radius: 8px; font-size: 13px; font-family: 'Inter', sans-serif; outline: none; background: transparent; transition: border 0.2s; margin-bottom: 8px; }
-.md-input:focus { border-color: #1976d2; border-width: 2px; padding: 9px 13px; }
-
-.code-boxes { display: flex; gap: 6px; justify-content: center; margin-bottom: 10px; }
-.code-boxes input { width: 38px; height: 44px; text-align: center; font-size: 20px; font-weight: 600; font-family: 'Inter', monospace; border: 1px solid #9e9e9e; border-radius: 8px; outline: none; background: transparent; transition: all 0.2s; }
-.code-boxes input:focus { border-color: #1976d2; border-width: 2px; box-shadow: 0 0 0 3px rgba(103,80,164,0.12); }
-.code-boxes input.filled { border-color: #1976d2; background: #e3f2fd; }
-
-.md-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 24px; border: none; border-radius: 20px; font-size: 14px; font-weight: 500; font-family: 'Inter', sans-serif; cursor: pointer; letter-spacing: 0.1px; transition: all 0.2s; }
-.md-btn.filled { background: #1976d2; color: #fff; }
-.md-btn.filled:hover { box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
-.md-btn.filled:disabled { background: #e0e0e0; color: #616161; box-shadow: none; cursor: default; }
-.md-btn.outlined { background: transparent; color: #1976d2; border: 1px solid #9e9e9e; }
-.md-btn.outlined:hover { background: rgba(103,80,164,0.08); }
-.md-btn.text { background: transparent; color: #b3261e; padding: 8px 12px; }
-.md-btn.text:hover { background: rgba(179,38,30,0.08); }
-.btn-row { text-align: center; }
-
-.paired-row { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding: 10px 14px; background: #e3f2fd; border-radius: 8px; }
-.paired-badge { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: #1976d2; }
-.paired-badge .material-icons-outlined { font-size: 18px; }
-
-.pair-error { color: #b3261e; font-size: 12px; margin-top: 4px; text-align: center; display: none; }
-
-/* Whitelist */
-.list { max-height: 140px; overflow-y: auto; margin-top: 8px; }
-.item { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #e3f2fd; border-radius: 8px; margin-bottom: 4px; font-size: 12px; font-family: 'JetBrains Mono', 'Cascadia Code', monospace; }
-.item .remove-btn { border: none; background: none; color: #b3261e; cursor: pointer; font-size: 18px; padding: 0 4px; line-height: 1; opacity: 0.6; display: flex; align-items: center; }
-.item .remove-btn:hover { opacity: 1; }
-.item .remove-btn .material-icons-outlined { font-size: 18px; }
-
-.add-row { display: flex; gap: 8px; margin-top: 8px; }
-.add-row input { flex: 1; padding: 8px 12px; border: 1px solid #9e9e9e; border-radius: 8px; font-size: 12px; outline: none; background: transparent; font-family: 'Inter', sans-serif; transition: border 0.2s; }
-.add-row input:focus { border-color: #1976d2; border-width: 2px; padding: 7px 11px; }
-.add-row button { padding: 8px 16px; border: none; background: #1976d2; color: #fff; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 500; }
-.add-row button:hover { box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
-
-.empty { color: #9e9e9e; font-size: 12px; padding: 16px 0; text-align: center; }
-
-.whitelist-body { overflow: hidden; transition: max-height 0.3s ease; }
-.whitelist-body.collapsed { max-height: 0 !important; }
-
-/* Settings */
-.settings-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
-.settings-label { font-size: 12px; color: #616161; }
-.settings-value { width: 80px; padding: 6px 10px; border: 1px solid #9e9e9e; border-radius: 8px; font-size: 12px; text-align: right; outline: none; background: transparent; font-family: 'Inter', sans-serif; }
-.settings-value:focus { border-color: #1976d2; }
+body { width: 380px; max-width: 100vw; max-height: 600px; overflow-y: auto; font: 13px/1.5 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); background: #fff; scrollbar-color: #c4cedc transparent; scrollbar-width: thin; }
+::selection { background: #dbeafe; color: #172554; }
+button, input { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; }
+button:focus-visible, summary:focus-visible { outline: 3px solid #93b4fa; outline-offset: 3px; }
+input { caret-color: var(--accent); }
+[hidden] { display: none !important; }
+.app-bar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); background: #fff; }
+.app-bar img { width: 30px; height: 30px; }
+.app-bar h1 { font-size: 17px; font-weight: 650; letter-spacing: -.25px; flex: 1; }
+.version { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+main { padding: 0 20px; }
+section { padding: 18px 0; border-bottom: 1px solid var(--line); }
+.status-row, .section-header, .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.status-heading { display: flex; align-items: center; gap: 8px; }
+.status-icon { width: 8px; height: 8px; border-radius: 50%; flex: none; background: #8190a5; }
+.status-icon.on { background: #16834b; }
+.status-icon.warn { background: #b76c0b; }
+.title { font-size: 15px; font-weight: 650; }
+.subtitle, .section-hint { font-size: 12px; color: var(--muted); margin-top: 3px; }
+h2 { font-size: 13px; font-weight: 600; }
+.md-switch { position: relative; width: 42px; height: 28px; flex: none; cursor: pointer; }
+.md-switch input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; z-index: 1; cursor: pointer; }
+.track { position: absolute; inset: 4px 3px; border: 1px solid #8190a5; border-radius: 12px; background: #d9e0e9; transition: background 160ms, border-color 160ms; }
+.thumb { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px #18233826; transition: transform 160ms; }
+.md-switch input:checked + .track { background: var(--accent); border-color: var(--accent); }
+.md-switch input:checked + .track .thumb { transform: translateX(16px); }
+.md-switch input:focus-visible + .track { outline: 3px solid #93b4fa; outline-offset: 3px; }
+.md-switch input:disabled { cursor: wait; }
+.md-switch input:disabled + .track { opacity: .6; }
+.pair-section { margin-top: 16px; }
+.field-label { display: block; margin: 14px 0 6px; font-size: 12px; font-weight: 550; }
+.md-input, .settings-value, .add-row input { border: 1px solid #7e8da3; border-radius: 7px; background: #fff; color: var(--text); outline: none; transition: border-color 160ms, box-shadow 160ms; }
+.md-input { width: 100%; padding: 9px 11px; }
+input::placeholder { color: #65738a; }
+.md-input:focus, .settings-value:focus, .add-row input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #2563eb1a; }
+input:disabled { color: var(--muted); background: var(--surface); }
+.code-boxes { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; margin: 8px 0 14px; }
+.code-boxes input { width: 100%; height: 42px; border: 1px solid #7e8da3; border-radius: 7px; text-align: center; font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); background: #fff; outline: none; }
+.code-boxes input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #2563eb1a; }
+.code-boxes input.filled { border-color: #8baef4; background: #f2f6ff; }
+.pair-hint { margin-top: 6px; font-size: 12px; color: var(--muted); }
+.md-btn { border: 1px solid transparent; border-radius: 7px; padding: 8px 14px; font-weight: 550; transition: background 160ms, color 160ms; }
+.md-btn.filled { width: 100%; background: var(--accent); color: #fff; }
+.md-btn.filled:hover:not(:disabled) { background: #1d4ed8; }
+.md-btn.filled:active:not(:disabled) { background: #1e40af; }
+.md-btn.filled:disabled { background: #e2e8f0; color: #526176; }
+.md-btn.text { padding: 5px 8px; background: transparent; color: #a63131; font-size: 12px; }
+.md-btn.text:hover { background: #fff1f1; }
+.paired-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 10px; }
+.paired-badge { color: #17683f; font-size: 12px; font-weight: 550; }
+.connection-meta { padding: 11px 12px; border-radius: 8px; background: var(--surface); }
+.connection-meta div { display: grid; grid-template-columns: 54px minmax(0, 1fr); gap: 10px; }
+.connection-meta div + div { margin-top: 5px; }
+.connection-meta span { color: var(--muted); font-size: 12px; }
+.connection-meta strong { font-weight: 550; font-size: 12px; overflow-wrap: anywhere; }
+.connection-meta code { font: 12px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; color: #465671; }
+.pair-error, .settings-error { color: #a42626; background: #fff1f1; padding: 9px 11px; border-radius: 7px; font-size: 12px; margin-top: 10px; overflow-wrap: anywhere; }
+.pair-error { display: none; }
+.whitelist-body { overflow: hidden; }
+.whitelist-body.collapsed { display: none; }
+.list { max-height: 138px; overflow-y: auto; margin-top: 12px; }
+.item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; background: var(--surface); margin-bottom: 5px; }
+.item > span { flex: 1; min-width: 0; overflow-wrap: anywhere; font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.remove-btn { border: 0; padding: 5px 0 5px 6px; background: transparent; color: #a63131; font-size: 12px; }
+.remove-btn:hover { text-decoration: underline; text-underline-offset: 3px; }
+.empty { padding: 12px; border-radius: 7px; background: #fff8e7; color: #80510a; font-size: 12px; }
+.add-row { display: flex; gap: 8px; margin-top: 10px; }
+.add-row input { flex: 1; min-width: 0; padding: 8px 10px; font-size: 12px; }
+.add-row button { padding: 8px 13px; border: 0; border-radius: 7px; color: #fff; background: var(--accent); font-weight: 550; }
+.add-row button:hover { background: #1d4ed8; }
+.settings-row { padding-top: 13px; }
+.settings-label { font-size: 12px; color: var(--muted); }
+.settings-value { width: 84px; padding: 6px 9px; text-align: right; font-size: 12px; font-variant-numeric: tabular-nums; }
+summary { min-height: 28px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; list-style: none; font-weight: 600; }
+summary::-webkit-details-marker { display: none; }
+summary svg { width: 14px; height: 14px; color: var(--muted); transition: transform 160ms; }
+details[open] summary svg { transform: rotate(90deg); }
+footer { padding: 14px 20px; color: var(--muted); font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
 </style>
 </head>
 <body>
-  <div class="app-bar">
-    <h3>Browser Bridge</h3>
-    <span class="version">v0.1.0</span>
-  </div>
-
-  <!-- Connection -->
-  <div class="card">
-    <div class="status-row">
-      <div id="statusIcon" class="status-icon off">
-        <span class="material-icons-outlined">link_off</span>
-      </div>
-      <div class="status-info">
-        <div id="statusMain" class="title">Disconnected</div>
-        <div id="statusSub" class="subtitle">Click switch to enable</div>
-      </div>
-      <label class="md-switch">
-        <input type="checkbox" id="enabledToggle">
-        <span class="track"><span class="thumb"></span></span>
-      </label>
-    </div>
-
-    <div class="pair-section">
-      <div id="pairUI" style="display:none">
-        <div class="divider"></div>
-        <div class="pair-hint">Connect to bridge server</div>
-        <input id="urlInput2" type="text" class="md-input" placeholder="ws://127.0.0.1:52853/ext">
-        <input id="nameInput" type="text" class="md-input" placeholder="Client name">
-        <div class="code-boxes" id="codeBoxes">
-          <input type="text" maxlength="1" inputmode="numeric" data-idx="0">
-          <input type="text" maxlength="1" inputmode="numeric" data-idx="1">
-          <input type="text" maxlength="1" inputmode="numeric" data-idx="2">
-          <input type="text" maxlength="1" inputmode="numeric" data-idx="3">
-          <input type="text" maxlength="1" inputmode="numeric" data-idx="4">
-          <input type="text" maxlength="1" inputmode="numeric" data-idx="5">
+  <header class="app-bar">
+    <img src="icons/icon32.png" alt="" width="30" height="30">
+    <h1>Browser Bridge</h1>
+    <span class="version"></span>
+  </header>
+  <main>
+    <section aria-label="Connection">
+      <div class="status-row">
+        <div class="status-info" role="status" aria-live="polite">
+          <div class="status-heading"><span id="statusIcon" class="status-icon off" aria-hidden="true"></span><span id="statusMain" class="title">Disconnected</span></div>
+          <p id="statusSub" class="subtitle">Enable to connect your browser</p>
         </div>
-        <div class="btn-row">
-          <button id="pairBtn" class="md-btn filled" disabled>
-            <span class="material-icons-outlined" style="font-size:18px">link</span>
-            Pair
-          </button>
+        <label class="md-switch"><input type="checkbox" id="enabledToggle" role="switch" aria-label="Enable Browser Bridge"><span class="track"><span class="thumb"></span></span></label>
+      </div>
+      <div class="pair-section">
+        <div id="pairUI" style="display:none">
+          <label for="urlInput2" class="field-label">Bridge server</label>
+          <input id="urlInput2" type="url" class="md-input" placeholder="ws://127.0.0.1:52853/ext" spellcheck="false" autocomplete="off">
+          <label for="nameInput" class="field-label">Browser name</label>
+          <input id="nameInput" type="text" class="md-input" placeholder="Client name" autocomplete="off">
+          <div class="field-label" id="codeLabel">Pairing code</div>
+          <p class="pair-hint">Generate a code with CLI: server gen-pair</p>
+          <div class="code-boxes" id="codeBoxes" role="group" aria-labelledby="codeLabel">
+            <input type="text" maxlength="1" inputmode="numeric" data-idx="0" aria-label="Pairing code digit 1" autocomplete="one-time-code">
+            <input type="text" maxlength="1" inputmode="numeric" data-idx="1" aria-label="Pairing code digit 2">
+            <input type="text" maxlength="1" inputmode="numeric" data-idx="2" aria-label="Pairing code digit 3">
+            <input type="text" maxlength="1" inputmode="numeric" data-idx="3" aria-label="Pairing code digit 4">
+            <input type="text" maxlength="1" inputmode="numeric" data-idx="4" aria-label="Pairing code digit 5">
+            <input type="text" maxlength="1" inputmode="numeric" data-idx="5" aria-label="Pairing code digit 6">
+          </div>
+          <button id="pairBtn" class="md-btn filled" disabled>Pair browser</button>
         </div>
-      </div>
-      <div id="pairedUI" style="display:none">
-        <div class="paired-row">
-          <span class="paired-badge">
-            <span class="material-icons-outlined">check_circle</span>
-            Paired
-          </span>
-          <button class="md-btn text" id="unpairBtn">Unpair</button>
+        <div id="pairedUI" style="display:none">
+          <div class="connection-meta"><div><span>Browser</span><strong id="pairedName"></strong></div><div><span>Server</span><code id="pairedServer"></code></div></div>
+          <div class="paired-row"><span class="paired-badge">Paired to this bridge</span><button class="md-btn text" id="unpairBtn">Unpair</button></div>
         </div>
+        <div id="pairError" class="pair-error" role="alert"></div>
       </div>
-      <div id="pairError" class="pair-error"></div>
-    </div>
-  </div>
-
-  <!-- Whitelist -->
-  <div class="card">
-    <div class="section-header">
-      <span class="section-label">
-        <span class="material-icons-outlined">shield</span>
-        URL Whitelist
-      </span>
-      <label class="md-switch">
-        <input type="checkbox" id="whitelistToggle">
-        <span class="track"><span class="thumb"></span></span>
-      </label>
-    </div>
-    <div id="whitelistBody" class="whitelist-body collapsed">
-      <div class="divider"></div>
-      <div id="list" class="list"></div>
-      <div class="add-row">
-        <input id="urlInput" type="text" placeholder="*.example.com">
-        <button id="addBtn">Add</button>
+    </section>
+    <section aria-labelledby="whitelistTitle">
+      <div class="section-header">
+        <div><h2 id="whitelistTitle">URL whitelist</h2><p class="section-hint">Restrict page actions to matching URLs.</p></div>
+        <label class="md-switch"><input type="checkbox" id="whitelistToggle" role="switch" aria-labelledby="whitelistTitle"><span class="track"><span class="thumb"></span></span></label>
       </div>
-    </div>
-  </div>
-
-  <!-- Settings -->
-  <div class="card">
-    <div class="section-header" style="margin-bottom:8px">
-      <span class="section-label">
-        <span class="material-icons-outlined">settings</span>
-        Auto Shutdown
-      </span>
-    </div>
-    <div class="settings-row">
-      <span class="settings-label">Idle timeout (hours)</span>
-      <input type="number" id="idleHours" class="settings-value" value="24" min="1" max="720">
-    </div>
-    <div class="settings-row">
-      <span class="settings-label">Max consecutive failures</span>
-      <input type="number" id="maxFails" class="settings-value" value="10" min="1" max="100">
-    </div>
-  </div>
-
+      <div id="whitelistBody" class="whitelist-body collapsed">
+        <div id="list" class="list"></div>
+        <div class="add-row"><input id="urlInput" type="text" placeholder="*.example.com" aria-label="Allowed URL pattern" spellcheck="false" autocomplete="off"><button id="addBtn">Add</button></div>
+      </div>
+    </section>
+    <section aria-labelledby="cursorTitle">
+      <div class="section-header">
+        <div><h2 id="cursorTitle">Show operation cursor</h2><p class="section-hint" id="cursorHint">Pointer feedback, hidden after 3 idle seconds.</p></div>
+        <label class="md-switch"><input type="checkbox" id="cursorToggle" role="switch" aria-labelledby="cursorTitle" aria-describedby="cursorHint" checked><span class="track"><span class="thumb"></span></span></label>
+      </div>
+    </section>
+    <section>
+      <details id="shutdownSettings">
+        <summary>Auto shutdown<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3 5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+        <div class="settings-row"><label for="idleHours" class="settings-label">Idle timeout (hours)</label><input type="number" id="idleHours" class="settings-value" value="24" min="1" max="720"></div>
+        <div class="settings-row"><label for="maxFails" class="settings-label">Consecutive failure limit</label><input type="number" id="maxFails" class="settings-value" value="10" min="1" max="100"></div>
+      </details>
+      <p id="settingsError" class="settings-error" role="alert" hidden></p>
+    </section>
+  </main>
+  <footer>Settings are saved automatically.</footer>
   <script src="popup.js"></script>
 </body>
 </html>

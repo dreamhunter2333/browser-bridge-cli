@@ -22,7 +22,7 @@ browser-bridge-cli whitelist
 browser-bridge-cli disable
 ```
 
-将 `CLIENT_ID` 换成 `clients` 返回的 ID，普通命令发往活跃客户端。标签页／分组 ID 属于该浏览器会话。白名单、扩展配对、空闲时间和失败阈值在弹窗中管理；`whitelist` 只查看设置，`disable` 断开所选扩展，需重新启用后连接。
+将 `CLIENT_ID` 换成 `clients` 返回的 ID，普通命令发往活跃客户端。标签页／分组 ID 属于该浏览器会话。白名单、扩展配对、操作光标显隐、空闲时间和失败阈值在弹窗中管理；`whitelist` 只查看设置，`disable` 断开所选扩展，需重新启用后连接。
 
 ## 远程部署
 

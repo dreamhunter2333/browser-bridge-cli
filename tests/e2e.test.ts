@@ -294,6 +294,32 @@ test.describe('Extension via Playwright', () => {
     await popup.close();
   });
 
+  test('popup fits narrow widths without remote fonts and applies settings immediately', async () => {
+    const popup = await getExtensionPopup(context);
+    try {
+      expect(await popup.locator('link[href^="https://"]').count()).toBe(0);
+      for (const width of [380, 320]) {
+        await popup.setViewportSize({ width, height: 600 });
+        expect(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      }
+      await popup.locator('#shutdownSettings summary').click();
+      await popup.getByLabel('Idle timeout (hours)').fill('0');
+      await popup.getByLabel('Idle timeout (hours)').press('Tab');
+      await expect(popup.locator('#idleHours')).toHaveValue('1');
+      await popup.getByLabel('Consecutive failure limit').fill('999');
+      await popup.getByLabel('Consecutive failure limit').press('Tab');
+      await expect(popup.locator('#maxFails')).toHaveValue('100');
+      await expect.poll(() => context.serviceWorkers()[0].evaluate('({idle:idleTimeout,failures:maxFailures})'))
+        .toEqual({ idle: 3600000, failures: 100 });
+    } finally {
+      await popup.evaluate(async () => {
+        await (globalThis as any).chrome.storage.local.set({ idleTimeout: 86400000, maxFailures: 10 });
+        await (globalThis as any).chrome.runtime.sendMessage({ type: 'settingsUpdated' });
+      });
+      await popup.close();
+    }
+  });
+
   test('extension pair via popup', async ({ }, testInfo) => {
     testInfo.setTimeout(90_000);
     const popup = await getExtensionPopup(context);
@@ -350,7 +376,9 @@ test.describe('Extension via Playwright', () => {
     const unpairBtn = popup.locator('#unpairBtn');
     if (await unpairBtn.isVisible()) {
       await unpairBtn.click();
-      await popup.waitForTimeout(1000);
+      await expect(popup.locator('#enabledToggle')).not.toBeChecked();
+      await expect(popup.locator('#statusMain')).toHaveText('Disabled');
+      await expect(popup.locator('#pairUI')).toBeVisible();
     }
     await popup.close();
   });

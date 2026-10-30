@@ -80,7 +80,7 @@ Selector targets use main-document CSS and must match exactly one visible elemen
 
 Default `--phase press` sends down/up. For manual sequences use `--phase down -k` and `--phase up`, keep the same explicit tab and selected browser, retain attachment on intermediate events, and release every key before detaching. Each input command pins its browser and tab, fails if that browser disconnects, and detaches unless `-k` is set. `{ "ok": true }` confirms dispatch; verify the page outcome separately.
 
-Automated pointer input shows a compact blue pointer with a white outline in the page, screenshots and live shares. Its tip marks the input position. It does not intercept clicks and darkens while pressed. It hides after three seconds without mouse input; further mouse input resets the timer or shows it again. Navigation removes it immediately. It works over modal dialogs and supports Trusted Types pages.
+Automated pointer input shows a compact blue pointer with a white outline in the page, screenshots and live shares. Its tip marks the input position. It does not intercept clicks and darkens while pressed. It hides after three seconds without mouse input; further mouse input resets the timer or shows it again. Navigation removes it immediately. It works over modal dialogs and supports Trusted Types pages. The popup’s **Show operation cursor** switch saves your preference and immediately hides current markers when turned off. Mouse input still works with the marker disabled.
 
 ## DOM and JavaScript
 

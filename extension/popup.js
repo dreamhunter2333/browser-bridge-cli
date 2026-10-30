@@ -18,6 +18,11 @@ const nameInput = document.getElementById('nameInput');
 const urlInput2 = document.getElementById('urlInput2');
 const idleHours = document.getElementById('idleHours');
 const maxFails = document.getElementById('maxFails');
+const cursorToggle = document.getElementById('cursorToggle');
+const settingsError = document.getElementById('settingsError');
+const pairedName = document.getElementById('pairedName');
+const pairedServer = document.getElementById('pairedServer');
+const DEFAULT_WS_URL = 'ws://127.0.0.1:52853/ext';
 
 let whitelist = [];
 let statusPollTimer = null;
@@ -41,12 +46,13 @@ versionEl.textContent = 'v' + chrome.runtime.getManifest().version;
 async function loadState() {
   const state = await chrome.storage.local.get([
     'enabled', 'whitelistEnabled', 'whitelist', 'pairingToken', 'wsUrl', 'clientName',
-    'idleTimeout', 'maxFailures',
+    'idleTimeout', 'maxFailures', 'showOperationCursor',
   ]);
   enabledToggle.checked = state.enabled === true;
   whitelistToggle.checked = state.whitelistEnabled === true;
   whitelist = state.whitelist || [];
-  if (state.wsUrl) urlInput2.value = state.wsUrl;
+  urlInput2.value = state.wsUrl || DEFAULT_WS_URL;
+  cursorToggle.checked = state.showOperationCursor !== false;
   nameInput.value = state.clientName || generateDefaultName();
   idleHours.value = Math.round((state.idleTimeout || 86400000) / 3600000);
   maxFails.value = state.maxFailures || 10;
@@ -66,29 +72,27 @@ async function refreshStatus() {
     const resp = await chrome.runtime.sendMessage({ type: 'getStatus' });
     if (resp && resp.connected && resp.paired) {
       statusIcon.className = 'status-icon on';
-      statusIcon.innerHTML = '<span class="material-icons-outlined">link</span>';
       statusMain.textContent = 'Connected';
       statusSub.textContent = 'Bridge server active';
     } else if (resp && resp.connected && !resp.paired) {
       statusIcon.className = 'status-icon warn';
-      statusIcon.innerHTML = '<span class="material-icons-outlined">link</span>';
       statusMain.textContent = 'Not Paired';
       statusSub.textContent = 'Enter pairing code';
     } else if (resp && resp.enabled) {
       statusIcon.className = 'status-icon off';
-      statusIcon.innerHTML = '<span class="material-icons-outlined">sync</span>';
       statusMain.textContent = 'Connecting...';
       statusSub.textContent = 'Waiting for bridge server';
     } else {
       statusIcon.className = 'status-icon off';
-      statusIcon.innerHTML = '<span class="material-icons-outlined">link_off</span>';
       statusMain.textContent = 'Disabled';
       statusSub.textContent = 'Click switch to enable';
     }
-    if (resp) updatePairingUI(resp.paired);
+    if (resp) {
+      enabledToggle.checked = resp.enabled === true;
+      updatePairingUI(resp.paired);
+    }
   } catch {
     statusIcon.className = 'status-icon off';
-    statusIcon.innerHTML = '<span class="material-icons-outlined">error_outline</span>';
     statusMain.textContent = 'Error';
     statusSub.textContent = 'Service worker inactive';
   }
@@ -99,6 +103,8 @@ function updatePairingUI(isPaired) {
     pairUI.style.display = 'none';
     pairedUI.style.display = 'block';
     pairError.style.display = 'none';
+    pairedName.textContent = nameInput.value;
+    pairedServer.textContent = urlInput2.value || DEFAULT_WS_URL;
   } else {
     pairUI.style.display = 'block';
     pairedUI.style.display = 'none';
@@ -110,7 +116,7 @@ function renderList() {
   if (whitelist.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty';
-    empty.textContent = whitelistToggle.checked ? 'No patterns -- all sites blocked' : 'No patterns added';
+    empty.textContent = whitelistToggle.checked ? 'Page actions are blocked until you add a pattern.' : 'No patterns added';
     listEl.appendChild(empty);
     return;
   }
@@ -121,7 +127,8 @@ function renderList() {
     span.textContent = whitelist[i];
     const btn = document.createElement('button');
     btn.className = 'remove-btn';
-    btn.innerHTML = '<span class="material-icons-outlined">close</span>';
+    btn.textContent = 'Remove';
+    btn.setAttribute('aria-label', `Remove ${whitelist[i]}`);
     btn.addEventListener('click', () => removeItem(i));
     item.appendChild(span);
     item.appendChild(btn);
@@ -130,12 +137,7 @@ function renderList() {
 }
 
 function updateWhitelistVisibility() {
-  if (whitelistToggle.checked) {
-    whitelistBody.classList.remove('collapsed');
-    whitelistBody.style.maxHeight = whitelistBody.scrollHeight + 200 + 'px';
-  } else {
-    whitelistBody.classList.add('collapsed');
-  }
+  whitelistBody.classList.toggle('collapsed', !whitelistToggle.checked);
 }
 
 async function saveWhitelist() {
@@ -155,7 +157,8 @@ async function removeItem(index) {
 enabledToggle.addEventListener('change', async () => {
   const enabled = enabledToggle.checked;
   await chrome.storage.local.set({ enabled });
-  chrome.runtime.sendMessage({ type: enabled ? 'enable' : 'disable' });
+  await chrome.runtime.sendMessage({ type: enabled ? 'enable' : 'disable' });
+  await refreshStatus();
 });
 
 whitelistToggle.addEventListener('change', async () => {
@@ -202,33 +205,36 @@ codeBoxes.forEach((box, i) => {
 
 pairBtn.addEventListener('click', async () => {
   const code = getCode();
-  if (code.length !== 6) return;
+  if (code.length !== 6 || pairBtn.disabled) return;
   pairBtn.disabled = true;
-  pairBtn.innerHTML = '<span class="material-icons-outlined" style="font-size:18px">hourglass_empty</span> Pairing...';
-  const resp = await chrome.runtime.sendMessage({
-    type: 'pair',
-    code,
-    name: nameInput.value.trim() || undefined,
-    wsUrl: urlInput2.value.trim() || undefined,
-  });
-  pairBtn.disabled = false;
-  pairBtn.innerHTML = '<span class="material-icons-outlined" style="font-size:18px">link</span> Pair';
-  if (resp && resp.success) {
-    pairError.style.display = 'none';
-    codeBoxes.forEach(b => b.value = '');
-    updatePairingUI(true);
-  } else {
-    pairError.textContent = resp?.error || 'Pairing failed';
+  pairBtn.textContent = 'Pairing...';
+  pairError.style.display = 'none';
+  const fields = [...codeBoxes, nameInput, urlInput2];
+  fields.forEach(field => field.disabled = true);
+  try {
+    const resp = await chrome.runtime.sendMessage({
+      type: 'pair', code,
+      name: nameInput.value.trim() || undefined,
+      wsUrl: urlInput2.value.trim() || undefined,
+    });
+    if (!resp?.success) throw new Error(resp?.error || 'Pairing failed');
+    codeBoxes.forEach(box => box.value = '');
+    await loadState();
+  } catch (error) {
+    pairError.textContent = error.message || 'Pairing failed. Please try again.';
     pairError.style.display = 'block';
-    codeBoxes.forEach(b => b.value = '');
-    codeBoxes[0].focus();
+    codeBoxes.forEach(box => box.value = '');
+  } finally {
+    fields.forEach(field => field.disabled = false);
+    pairBtn.textContent = 'Pair browser';
     updatePairBtn();
+    if (pairError.style.display === 'block') codeBoxes[0].focus();
   }
 });
 
 unpairBtn.addEventListener('click', async () => {
   await chrome.runtime.sendMessage({ type: 'unpair' });
-  updatePairingUI(false);
+  await loadState();
 });
 
 addBtn.addEventListener('click', async () => {
@@ -245,15 +251,36 @@ urlInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') addBtn.click();
 });
 
-// Settings
-idleHours.addEventListener('change', () => {
-  const ms = Math.max(1, parseInt(idleHours.value) || 24) * 3600000;
-  chrome.storage.local.set({ idleTimeout: ms });
+async function saveSettings(values) {
+  settingsError.hidden = true;
+  try {
+    await chrome.storage.local.set(values);
+    const result = await chrome.runtime.sendMessage({ type: 'settingsUpdated' });
+    if (!result?.ok) throw new Error(result?.error || 'Settings could not be applied');
+  } catch {
+    settingsError.textContent = 'Could not apply settings. Please try again.';
+    settingsError.hidden = false;
+  }
+}
+
+cursorToggle.addEventListener('change', async () => {
+  cursorToggle.disabled = true;
+  try { await saveSettings({ showOperationCursor: cursorToggle.checked }); }
+  finally { cursorToggle.disabled = false; }
 });
 
-maxFails.addEventListener('change', () => {
-  const val = Math.max(1, parseInt(maxFails.value) || 10);
-  chrome.storage.local.set({ maxFailures: val });
+idleHours.addEventListener('change', async () => {
+  const entered = parseInt(idleHours.value);
+  const hours = Math.min(720, Math.max(1, Number.isFinite(entered) ? entered : 24));
+  idleHours.value = String(hours);
+  await saveSettings({ idleTimeout: hours * 3600000 });
+});
+
+maxFails.addEventListener('change', async () => {
+  const entered = parseInt(maxFails.value);
+  const value = Math.min(100, Math.max(1, Number.isFinite(entered) ? entered : 10));
+  maxFails.value = String(value);
+  await saveSettings({ maxFailures: value });
 });
 
 loadState();

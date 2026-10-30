@@ -21,10 +21,11 @@ let lastActivity = Date.now();
 let consecutiveFailures = 0;
 let maxFailures = DEFAULT_MAX_FAILURES;
 let idleTimeout = IDLE_TIMEOUT;
+let showOperationCursor = true;
 let stateLoaded = false;
 
 const stateReady = new Promise((resolve) => {
-  chrome.storage.local.get(['enabled', 'whitelistEnabled', 'whitelist', 'pairingToken', 'clientName', 'wsUrl', 'idleTimeout', 'maxFailures'], (state) => {
+  chrome.storage.local.get(['enabled', 'whitelistEnabled', 'whitelist', 'pairingToken', 'clientName', 'wsUrl', 'idleTimeout', 'maxFailures', 'showOperationCursor'], (state) => {
     enabled = state.enabled === true;
     whitelistEnabled = state.whitelistEnabled === true;
     whitelist = state.whitelist || [];
@@ -33,6 +34,7 @@ const stateReady = new Promise((resolve) => {
     wsUrl = state.wsUrl || DEFAULT_WS_URL;
     idleTimeout = state.idleTimeout || IDLE_TIMEOUT;
     maxFailures = state.maxFailures || DEFAULT_MAX_FAILURES;
+    showOperationCursor = state.showOperationCursor !== false;
     stateLoaded = true;
     resolve();
     if (enabled) connect();
@@ -269,6 +271,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
       sendResponse({ ok: true });
       break;
+    case 'settingsUpdated':
+      stateReady.then(() => chrome.storage.local.get(['idleTimeout', 'maxFailures', 'showOperationCursor'])).then(async (state) => {
+        idleTimeout = state.idleTimeout || IDLE_TIMEOUT;
+        maxFailures = state.maxFailures || DEFAULT_MAX_FAILURES;
+        showOperationCursor = state.showOperationCursor !== false;
+        if (!showOperationCursor) await hideOperationCursors();
+        sendResponse({ ok: true });
+      }).catch(error => sendResponse({ ok: false, error: String(error) }));
+      break;
   }
   return true;
 });
@@ -281,6 +292,7 @@ const debuggerLeases = new Map();
 const debuggerUsers = new Map();
 const pendingDetach = new Set();
 const debuggerIdleTimers = new Map();
+const cursorTargets = new Map();
 const DEBUGGER_IDLE_TIMEOUT = 5 * 60 * 1000;
 
 function clearDebuggerIdle(tabId) {
@@ -307,6 +319,7 @@ function newCdpEventStream() {
 }
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  cursorTargets.delete(tabId);
   const lease = debuggerLeases.get(tabId);
   if (lease) clearTimeout(lease.timer);
   debuggerLeases.delete(tabId);
@@ -481,8 +494,15 @@ function cdpSend(tabId, method, params, sessionId) {
 }
 
 async function showCursor(tabId, input, sessionId) {
+  if (!showOperationCursor) return;
   if (!['mouseMoved', 'mousePressed', 'mouseReleased', 'mouseWheel'].includes(input?.type)
     || !Number.isFinite(input.x) || !Number.isFinite(input.y)) return;
+  for (const [id, sessions] of cursorTargets) {
+    for (const [session, expires] of sessions) if (expires < Date.now()) sessions.delete(session);
+    if (!sessions.size) cursorTargets.delete(id);
+  }
+  if (!cursorTargets.has(tabId)) cursorTargets.set(tabId, new Map());
+  cursorTargets.get(tabId).set(sessionId, Date.now() + 3000);
   const expression = `(() => {
     if (!document.documentElement) return;
     let cursor = document.getElementById('browser-bridge-cursor');
@@ -520,6 +540,25 @@ async function showCursor(tabId, input, sessionId) {
     cursor.__browserBridgeHideTimer = setTimeout(() => cursor.remove(), 3000);
   })()`;
   await cdpSend(tabId, 'Runtime.evaluate', { expression }, sessionId);
+  if (!showOperationCursor) await cdpSend(tabId, 'Runtime.evaluate', { expression: "document.getElementById('browser-bridge-cursor')?.remove()" }, sessionId);
+}
+
+async function hideOperationCursors() {
+  const targets = [...cursorTargets];
+  cursorTargets.clear();
+  await Promise.all(targets.map(async ([tabId, sessions]) => {
+    const active = [...sessions].filter(([, expires]) => expires >= Date.now());
+    if (!active.length) return;
+    const keepAttached = attached.has(tabId);
+    try {
+      await ensureAttached(tabId);
+      await Promise.all(active.map(([sessionId]) => cdpSend(tabId, 'Runtime.evaluate', {
+        expression: "document.getElementById('browser-bridge-cursor')?.remove()",
+      }, sessionId)));
+    } catch {} finally {
+      if (!keepAttached) await cdpDetach(tabId);
+    }
+  }));
 }
 
 async function cdpEval(tabId, expression) {

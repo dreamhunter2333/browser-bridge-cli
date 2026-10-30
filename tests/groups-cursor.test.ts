@@ -220,6 +220,49 @@ test.describe('Tab groups and visible cursor', () => {
     }
   });
 
+  test('popup cursor switch persists, immediately hides existing markers and leaves input working', async () => {
+    const pages = await Promise.all([context.newPage(), context.newPage()]);
+    const popup = await getExtensionPopup(context);
+    const toggle = popup.getByRole('switch', { name: 'Show operation cursor' });
+    try {
+      await expect(toggle).toBeChecked();
+      const ids: string[] = [];
+      for (const page of pages) {
+        await page.setContent('<button style="position:absolute;left:100px;top:100px;width:100px;height:60px" onclick="window.clicked=true">click</button>');
+        ids.push(String(await tabId(page)));
+        await json(['move', '300', '200', '-t', ids.at(-1)!]);
+        await expect(page.locator('#browser-bridge-cursor')).toHaveCount(1);
+      }
+      await toggle.focus();
+      await popup.keyboard.press('Space');
+      await expect(toggle).not.toBeChecked();
+      for (const page of pages) await expect(page.locator('#browser-bridge-cursor')).toHaveCount(0, { timeout: 1000 });
+      for (const id of ids) {
+        await json(['click', '--x', '150', '--y', '130', '-t', id]);
+        await json(['move', '400', '200', '-t', id]);
+      }
+      for (const page of pages) {
+        expect(await page.evaluate(() => (window as any).clicked)).toBe(true);
+        await expect(page.locator('#browser-bridge-cursor')).toHaveCount(0);
+      }
+      await popup.reload();
+      await expect(toggle).not.toBeChecked();
+      await toggle.focus();
+      await popup.keyboard.press('Space');
+      await expect(toggle).toBeChecked();
+      await expect(toggle).toBeEnabled();
+      await json(['move', '300', '200', '-t', ids[0]]);
+      await expect(pages[0].locator('#browser-bridge-cursor')).toHaveCount(1);
+    } finally {
+      await popup.evaluate(async () => {
+        await (globalThis as any).chrome.storage.local.set({ showOperationCursor: true });
+        await (globalThis as any).chrome.runtime.sendMessage({ type: 'settingsUpdated' });
+      });
+      await popup.close();
+      for (const page of pages) await page.close();
+    }
+  });
+
   test('cursor hides after three idle seconds, resets on input and reappears on new input', async () => {
     const page = await context.newPage();
     try {

@@ -22,7 +22,7 @@ browser-bridge-cli whitelist
 browser-bridge-cli disable
 ```
 
-Replace `CLIENT_ID` with an ID from `clients`. The active client routes normal commands. Tab/group IDs are specific to that browser session. Manage whitelist patterns, extension pairing, idle timeout and failure thresholds from the popup; `whitelist` only displays settings. `disable` disconnects the selected extension until enabled again.
+Replace `CLIENT_ID` with an ID from `clients`. The active client routes normal commands. Tab/group IDs are specific to that browser session. Manage whitelist patterns, extension pairing, operation cursor visibility, idle timeout and failure thresholds from the popup; `whitelist` only displays settings. `disable` disconnects the selected extension until enabled again.
 
 ## Remote setup
 

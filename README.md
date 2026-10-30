@@ -9,7 +9,7 @@ Control your already-open Chrome or Edge from a terminal or AI agent. Reuse exis
 | Area | What you can do |
 | --- | --- |
 | Tabs & groups | List, inspect, open, activate, navigate, reload and close tabs; filter by window/group; create, rename, recolor, collapse, move and dissolve groups; move tabs between groups. |
-| Mouse & keyboard | Click, double/right click, hover, move, scroll, insert text and send key codes/modifiers. An operation cursor appears in screenshots/live shares and hides after 3 idle seconds. |
+| Mouse & keyboard | Click, double/right click, hover, move, scroll, insert text and send key codes/modifiers. An optional operation cursor appears in screenshots/live shares and hides after 3 idle seconds; toggle it in the extension popup. |
 | DOM & JavaScript | Query CSS selectors, filter visible/in-viewport elements, evaluate expressions or local script files. |
 | Capture & export | Viewport, full-page, clipped and stitched long screenshots; height caps and sticky-header handling; PDF export. |
 | Network & cookies | Read/clear per-tab network logs and filter cookies by URL, domain or name. |
