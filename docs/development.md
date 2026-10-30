@@ -38,15 +38,60 @@ The extension's DOM cursor is click-through, uses a closed shadow root and a man
 
 ## Build and test
 
+Install dependencies and build:
+
 ```bash
 bun install
-bun run dev -- info
-bun run dev:server
 bun run build
+```
+
+### Test prerequisites
+
+The suite requires the Chromium runtime matching the project's Playwright version (`channel: 'chromium'`). It starts temporary browser profiles and does not attach to an installed Chrome, Edge or EGO session. An existing matching Playwright cache can be reused; `bun install` alone does not prepare the browser executable.
+
+<details>
+<summary>Preparing a fresh disposable environment or CI runner</summary>
+
+Download the test runtime into the Playwright cache in that environment:
+
+```bash
+bun x playwright install chromium
+```
+
+For a Linux CI runner that also needs system dependencies:
+
+```bash
+bun x playwright install --with-deps chromium
+```
+
+These are environment preparation steps, separate from running tests. Do not install a user's system browser without authorization.
+
+</details>
+
+With the runtime ready, run:
+
+```bash
 bun run test
 ```
 
-The Playwright suite uses a temporary Chromium profile and isolated CLI/server state. `tests/helpers.ts` overrides HOME/USERPROFILE for tests; never point test state at a real `~/.browser-bridge/`. Use existing browser runtimes where available; temporary CI runners may install Playwright Chromium. Do not install a user's system browser without authorization.
+The suite isolates CLI/server state using HOME/USERPROFILE in `tests/helpers.ts`; never point test state at a real `~/.browser-bridge/`.
+
+### Local development
+
+Choose one server mode. CLI development auto-starts a background Bridge when needed:
+
+```bash
+bun run dev -- info
+```
+
+For foreground server development, stop the background Bridge first, then keep this terminal running:
+
+```bash
+bun run dev -- server stop
+bun run dev:server
+```
+
+Use another terminal for `bun run dev -- <command>`. Do not run foreground and background servers on the same port. The build and test commands above do not require starting a development server.
 
 CI builds and tests on Ubuntu and Windows for pull requests and pushes to `main` / `feat/**`. Linux uses Xvfb; failures upload `test-results` for seven days. Coverage includes group CRUD/moves/whitelist/invalid inputs, input routing and cleanup, cursor screenshots/modal/Trusted Types, debugger idle behavior, sharing and video geometry/keyframes. A suite pass does not imply that a particular installed Chrome/Edge/EGO build was tested; report local-browser checks separately.
 

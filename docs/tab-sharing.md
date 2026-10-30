@@ -41,9 +41,12 @@ A Bridge listening outside loopback requires a username and password for each
 share, even when the viewing connection originates locally. The browser uses
 its standard HTTP Basic login prompt; WebSocket upgrades use the same login.
 Passwords are supplied from an environment variable, not embedded in URLs.
+Stop the existing Bridge before changing its bind address; `server start` does
+not reconfigure an already-running process.
 
 ```bash
 # Set BROWSER_BRIDGE_SHARE_PASSWORD securely in the CLI environment first.
+browser-bridge-cli server stop
 browser-bridge-cli server start --host 0.0.0.0
 browser-bridge-cli share start --username viewer
 browser-bridge-cli share status 'http://bridge-host:52853/share/HASH/' --username viewer

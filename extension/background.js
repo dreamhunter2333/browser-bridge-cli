@@ -517,6 +517,8 @@ async function showCursor(tabId, input, sessionId) {
     cursor.dataset.y = ${JSON.stringify(String(input.y))};
     cursor.dataset.pressed = ${JSON.stringify(String(input.type === 'mousePressed' || !!input.buttons))};
     cursor.style.setProperty('filter', cursor.dataset.pressed === 'true' ? 'drop-shadow(0 0 6px #0284c7)' : 'none', 'important');
+    clearTimeout(cursor.__browserBridgeHideTimer);
+    cursor.__browserBridgeHideTimer = setTimeout(() => cursor.remove(), 3000);
   })()`;
   await cdpSend(tabId, 'Runtime.evaluate', { expression }, sessionId);
 }

@@ -38,15 +38,60 @@ DOM 操作光标不拦截输入，通过 closed shadow root 和 manual popover �
 
 ## 构建与测试
 
+安装依赖并构建：
+
 ```bash
 bun install
-bun run dev -- info
-bun run dev:server
 bun run build
+```
+
+### 测试前置条件
+
+测试需要与项目 Playwright 版本匹配的 Chromium 运行时（`channel: 'chromium'`），使用临时浏览器 profile，不会连接已安装的 Chrome、Edge 或 EGO 会话。可复用已有的匹配 Playwright 缓存，单独执行 `bun install` 不会准备浏览器可执行文件。
+
+<details>
+<summary>准备全新的临时环境或 CI runner</summary>
+
+在该环境中将测试运行时下载到 Playwright 缓存：
+
+```bash
+bun x playwright install chromium
+```
+
+Linux CI runner 如还需要系统依赖：
+
+```bash
+bun x playwright install --with-deps chromium
+```
+
+以上是独立的环境准备步骤，准备后再运行测试。未经授权不要安装用户的系统浏览器。
+
+</details>
+
+运行时就绪后执行：
+
+```bash
 bun run test
 ```
 
-Playwright 使用临时 Chromium profile 及隔离的 CLI／服务器状态。`tests/helpers.ts` 为测试设置 HOME／USERPROFILE，不要使用真实的 `~/.browser-bridge/`。优先使用已有浏览器运行时，临时 CI runner 可安装 Playwright Chromium；未经授权不要安装用户的系统浏览器。
+测试通过 `tests/helpers.ts` 中的 HOME／USERPROFILE 隔离 CLI／服务器状态，不要使用真实的 `~/.browser-bridge/`。
+
+### 本地开发
+
+服务器模式二选一。CLI 开发会按需自动启动后台 Bridge：
+
+```bash
+bun run dev -- info
+```
+
+开发前台服务器时，先停止后台 Bridge，再保持该终端运行：
+
+```bash
+bun run dev -- server stop
+bun run dev:server
+```
+
+在另一个终端执行 `bun run dev -- <command>`。不要在相同端口同时运行前台和后台服务器；前述构建与测试无需启动开发服务器。
 
 CI 对 PR 和推送到 `main`／`feat/**` 的提交在 Ubuntu、Windows 构建并测试。Linux 使用 Xvfb，失败上传 `test-results`，保留 7 天。覆盖分组增删改查／移动／白名单／错误输入、输入路由与清理、光标截图／模态弹窗／Trusted Types、调试器空闲、远控及视频尺寸／关键帧回归。测试套件通过不代表某个本机 Chrome／Edge／EGO 版本已实测，本机结果应单独说明。
 

@@ -34,9 +34,10 @@ CLI、Bridge Server、浏览器扩展可同机，也可分布在两台或三台�
 机器 B：CLI ── HTTP ── 机器 A：Bridge ── 本地 WebSocket ── 机器 A：扩展
 ```
 
-在**机器 A** 执行：
+在**机器 A** 上，修改监听地址前先停止已有的本地 Bridge。`server start` 不会修改已经运行的进程：
 
 ```bash
+browser-bridge-cli server stop
 browser-bridge-cli server start --host 0.0.0.0 --port 52853
 browser-bridge-cli server gen-pair
 ```
@@ -63,22 +64,36 @@ Bridge 机器需允许客户端访问 TCP 52853。远程连接使用内网、VPN
 
 ## 配置与服务器管理
 
+查看已保存设置：
+
 ```bash
 browser-bridge-cli config get                       # token 脱敏
-browser-bridge-cli config set server http://bridge-host:52853
-browser-bridge-cli config set name remote-cli
-browser-bridge-cli config reset
-browser-bridge-cli unpair                           # 撤销／清理远程 CLI 凭据
+```
 
+断开远程 CLI 时，在修改或清理保存的服务器 URL、token、配对名称**之前**撤销凭据：
+
+```bash
+browser-bridge-cli unpair
+```
+
+`unpair` 先尝试在服务器撤销凭据，再清理本机配置。若提示仅完成本地清理，则尚未确认服务器已撤销。`config reset` 是独立的本地清理操作，不能撤销凭据；需要撤销时，不要先执行它再执行 `unpair`：
+
+```bash
+browser-bridge-cli config reset
+```
+
+独立修改配置可用 `config set <key> <value>`，键支持 `server`、`token`、`name`。配置远程 CLI 时，优先使用 `pair --server` 一并保存匹配的服务器、凭据和配对名称。
+
+`server ...` 只在 Bridge 所在机器执行，不加 `--server`。修改监听地址或端口时，先停止，再使用新设置启动：
+
+```bash
 browser-bridge-cli server status
 browser-bridge-cli server stop
 browser-bridge-cli server start --host 127.0.0.1 --port 52853
 browser-bridge-cli server gen-pair
-browser-bridge-cli server install-service           # Linux systemd 用户服务
-browser-bridge-cli server install-service --uninstall
 ```
 
-`config reset` 只清理保存的 CLI 配置，不会撤销 token。`server ...` 只在 Bridge 所在机器执行，不加 `--server`。`server start` 和 `install-service` 也支持 `--token`，用于显式管理服务器凭据。
+Linux 可通过 `server install-service` 安装 systemd 用户服务，通过 `server install-service --uninstall` 移除。`server start` 和 `install-service` 也支持 `--token`，用于显式管理服务器凭据。
 
 配置优先级：CLI 参数 → `BROWSER_BRIDGE_URL`／`BROWSER_BRIDGE_TOKEN` → 已保存配置 → 本机服务器状态。单次远程调用可用 `--server` 搭配 **client token**，或使用环境变量。本机浏览器命令可自动启动本地服务器；远程 CLI 不会启动远程服务器。
 

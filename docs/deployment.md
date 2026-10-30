@@ -34,9 +34,10 @@ CLI, Bridge Server and browser extension can run together, on two machines, or o
 Machine B: CLI ── HTTP ── Machine A: Bridge ── local WebSocket ── Machine A: extension
 ```
 
-On **Machine A**:
+On **Machine A**, stop any existing local Bridge before changing its bind address. `server start` does not reconfigure an already-running process:
 
 ```bash
+browser-bridge-cli server stop
 browser-bridge-cli server start --host 0.0.0.0 --port 52853
 browser-bridge-cli server gen-pair
 ```
@@ -63,22 +64,36 @@ The Bridge machine must allow inbound TCP 52853 from its clients. Use a private 
 
 ## Configuration and server management
 
+Inspect saved settings:
+
 ```bash
 browser-bridge-cli config get                       # Tokens are masked
-browser-bridge-cli config set server http://bridge-host:52853
-browser-bridge-cli config set name remote-cli
-browser-bridge-cli config reset
-browser-bridge-cli unpair                           # Revoke/clear remote CLI credentials
+```
 
+To disconnect a remote CLI, revoke its credential **before** changing or clearing its saved server URL, token or paired name:
+
+```bash
+browser-bridge-cli unpair
+```
+
+`unpair` attempts server-side revocation, then clears local credentials. If it reports local clearing only, server-side revocation is not confirmed. `config reset` is a separate local-only operation; it cannot revoke a credential and must not precede `unpair` when revocation is intended:
+
+```bash
+browser-bridge-cli config reset
+```
+
+For an independent configuration change, use `config set <key> <value>` (`server`, `token` or `name`). Prefer `pair --server` to set up a remote CLI's matching server, credential and paired name together.
+
+Run `server ...` only on the Bridge machine and do not pass `--server`. To change its host or port, stop it and then start it with the new settings:
+
+```bash
 browser-bridge-cli server status
 browser-bridge-cli server stop
 browser-bridge-cli server start --host 127.0.0.1 --port 52853
 browser-bridge-cli server gen-pair
-browser-bridge-cli server install-service           # Linux systemd user service
-browser-bridge-cli server install-service --uninstall
 ```
 
-`config reset` clears saved CLI config; it does not revoke a token. Run `server ...` only on the Bridge machine and do not pass `--server` to those commands. `server start` and `install-service` also accept `--token` for an explicitly managed server credential.
+On Linux, `server install-service` installs a systemd user service; use `server install-service --uninstall` to remove it. `server start` and `install-service` also accept `--token` for an explicitly managed server credential.
 
 Resolution order: CLI flags → `BROWSER_BRIDGE_URL` / `BROWSER_BRIDGE_TOKEN` → saved config → local server state. For one-off remote access, use `--server` plus a **client** token or the environment variables. Local browser commands can auto-start a local server; remote clients never start the remote server.
 

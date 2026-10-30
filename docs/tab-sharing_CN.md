@@ -30,9 +30,10 @@ browser-bridge-cli share stop 'http://127.0.0.1:52853/share/HASH/'
 
 监听回环地址（`127.0.0.1`、`localhost`、`::1`）时默认不要求观看端登录，只接受回环 Host 并拒绝外部浏览器 origin。CLI 和扩展原有 token 认证保持不变。
 
-Bridge 监听非回环地址时，每个分享必须配置用户名和密码，即使观看连接来自本机。先安全地设置 CLI 环境中的 `BROWSER_BRIDGE_SHARE_PASSWORD`，再执行：
+Bridge 监听非回环地址时，每个分享必须配置用户名和密码，即使观看连接来自本机。先安全地设置 CLI 环境中的 `BROWSER_BRIDGE_SHARE_PASSWORD`，再执行。修改监听地址前需停止已有 Bridge，`server start` 不会修改已运行的进程：
 
 ```bash
+browser-bridge-cli server stop
 browser-bridge-cli server start --host 0.0.0.0
 browser-bridge-cli share start --username viewer
 browser-bridge-cli share status 'http://bridge-host:52853/share/HASH/' --username viewer

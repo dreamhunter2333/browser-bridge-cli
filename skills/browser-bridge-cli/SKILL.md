@@ -173,7 +173,7 @@ browser-bridge-cli groups delete 12
 
 Group results include metadata and ordered `tabIds`. `tabs --json` exposes `groupId`; `-1` means ungrouped. `groups list` accepts `--window`, `--title` patterns, `--color`, `--collapsed` or `--expanded`. Group IDs are browser-session scoped. Creation requires existing tabs; delete dissolves the group without closing tabs. Moving the last member out deletes an empty group. Every group command pins its selected browser across requests; mutations check all affected tabs against the whitelist.
 
-Pointer input shows an in-page blue cursor with click feedback. It does not intercept input and remains at the last position until navigation. Screenshots and live shares include the marker, including on modal dialogs and Trusted Types pages.
+Pointer input shows an in-page blue cursor with click feedback. It does not intercept input and hides after three seconds without mouse input. Further mouse input resets the timer or shows it again; navigation removes it immediately. Screenshots and live shares include the marker, including on modal dialogs and Trusted Types pages.
 
 ## Workflow
 

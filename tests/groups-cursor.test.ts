@@ -217,6 +217,35 @@ test.describe('Tab groups and visible cursor', () => {
     }
   });
 
+  test('cursor hides after three idle seconds, resets on input and reappears on new input', async () => {
+    const page = await context.newPage();
+    try {
+      await page.setContent('<body style="height:3000px"><button style="position:absolute;left:100px;top:100px;width:100px;height:60px" onclick="window.clicked=true">click</button></body>');
+      await page.clock.install();
+      await page.clock.pauseAt(new Date(Date.now() + 1000));
+      const id = String(await tabId(page));
+      const cursor = page.locator('#browser-bridge-cursor');
+      await json(['move', '300', '200', '-t', id]);
+      await expect(cursor).toHaveCount(1);
+      await page.clock.runFor(2000);
+      await json(['move', '400', '200', '-t', id]);
+      await page.clock.runFor(2000);
+      await expect(cursor).toHaveAttribute('data-x', '400');
+      await page.clock.runFor(999);
+      await expect(cursor).toHaveCount(1);
+      await page.clock.runFor(1);
+      await expect(cursor).toHaveCount(0);
+      await json(['click', '--x', '150', '--y', '130', '-t', id]);
+      await expect(cursor).toHaveCount(1);
+      expect(await page.evaluate(() => (window as any).clicked)).toBe(true);
+      await page.clock.runFor(3000);
+      await expect(cursor).toHaveCount(0);
+    } finally {
+      await page.clock.resume();
+      await page.close();
+    }
+  });
+
   test('cursor remains visible over modal dialogs on Trusted Types pages', async () => {
     const page = await context.newPage();
     const file = path.join(os.tmpdir(), `bb-cursor-modal-${Date.now()}.png`);
