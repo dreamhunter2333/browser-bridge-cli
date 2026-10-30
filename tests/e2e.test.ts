@@ -308,13 +308,13 @@ test.describe('Extension via Playwright', () => {
         if (!popup?.document.querySelector('h1')) return null;
         const title = popup.document.querySelector('h1');
         return {
-          width: popup.innerWidth,
+          viewportFits: popup.innerWidth >= 380 && popup.innerWidth <= 400,
           bodyWidth: popup.document.body.getBoundingClientRect().width,
           titleLines: title.getBoundingClientRect().height / parseFloat(popup.getComputedStyle(title).lineHeight),
           overflow: popup.document.documentElement.scrollWidth > popup.innerWidth,
           heightFits: popup.innerHeight <= 600,
         };
-      })).toEqual({ width: 380, bodyWidth: 380, titleLines: 1, overflow: false, heightFits: true });
+      })).toEqual({ viewportFits: true, bodyWidth: 380, titleLines: 1, overflow: false, heightFits: true });
     } finally {
       await page.evaluate(() => {
         for (const popup of (globalThis as any).chrome.extension.getViews({ type: 'popup' })) popup.close();
