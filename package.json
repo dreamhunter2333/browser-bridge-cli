@@ -1,6 +1,6 @@
 {
   "name": "browser-bridge-cli",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Control Chrome/Edge browser via CLI through a browser extension",
   "type": "module",
   "bin": {
