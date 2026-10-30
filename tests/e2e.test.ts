@@ -294,14 +294,39 @@ test.describe('Extension via Playwright', () => {
     await popup.close();
   });
 
-  test('popup fits narrow widths without remote fonts and applies settings immediately', async () => {
+  test('toolbar popup keeps its intrinsic width when Chrome opens it', async () => {
+    const page = await getExtensionPopup(context);
+    try {
+      await page.evaluate(async () => {
+        const chrome = (globalThis as any).chrome;
+        const window = await chrome.windows.getCurrent();
+        await chrome.windows.update(window.id, { focused: true });
+        await chrome.action.openPopup({ windowId: window.id });
+      });
+      await expect.poll(() => page.evaluate(() => {
+        const popup = (globalThis as any).chrome.extension.getViews({ type: 'popup' })[0];
+        if (!popup?.document.querySelector('h1')) return null;
+        const title = popup.document.querySelector('h1');
+        return {
+          width: popup.innerWidth,
+          bodyWidth: popup.document.body.getBoundingClientRect().width,
+          titleLines: title.getBoundingClientRect().height / parseFloat(popup.getComputedStyle(title).lineHeight),
+          overflow: popup.document.documentElement.scrollWidth > popup.innerWidth,
+          heightFits: popup.innerHeight <= 600,
+        };
+      })).toEqual({ width: 380, bodyWidth: 380, titleLines: 1, overflow: false, heightFits: true });
+    } finally {
+      await page.evaluate(() => {
+        for (const popup of (globalThis as any).chrome.extension.getViews({ type: 'popup' })) popup.close();
+      });
+      await page.close();
+    }
+  });
+
+  test('popup uses local fonts and applies settings immediately', async () => {
     const popup = await getExtensionPopup(context);
     try {
       expect(await popup.locator('link[href^="https://"]').count()).toBe(0);
-      for (const width of [380, 320]) {
-        await popup.setViewportSize({ width, height: 600 });
-        expect(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-      }
       await popup.locator('#shutdownSettings summary').click();
       await popup.getByLabel('Idle timeout (hours)').fill('0');
       await popup.getByLabel('Idle timeout (hours)').press('Tab');
