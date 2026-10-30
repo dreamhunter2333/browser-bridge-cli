@@ -33,23 +33,30 @@ git tag v<version>
 ## Important Files
 
 - `src/cli.ts` — Commander CLI and browser command implementations.
+- `src/groups.ts` — tab group commands, browser pinning, metadata and membership.
 - `src/client.ts` — CLI config resolution, local server auto-start, HTTP request helpers.
 - `src/server.ts` — HTTP API, WebSocket broker, pairing, auth, active client routing.
+- `src/share.ts` / `src/share-view.ts` — live sharing lifecycle, authentication and viewer.
 - `extension/background.js` — MV3 service worker, WebSocket client, Chrome APIs and CDP dispatch.
 - `extension/popup.html` / `extension/popup.js` — popup UI for enable/disable, pairing, whitelist, settings.
+- `extension/video.html` / `extension/video.js` — offscreen VP8 encoding.
 - `tests/e2e.test.ts` / `tests/helpers.ts` — Playwright tests for server, extension, CLI, screenshots.
 - `skills/browser-bridge-cli/SKILL.md` — installable Browser Bridge CLI agent skill.
 - `skills/browser-bridge-cli-skill-generator/SKILL.md` — skill for creating website workflow skills backed by Browser Bridge CLI.
 - `docs/browser-bridge-intro.png` — README/Chrome Web Store product image.
 - `docs/browser-bridge-icon.png` — source product icon used to derive extension icons.
+- `docs/README.md` — bilingual documentation index; README files are user guides, with technical details in topic guides.
 
 ## CLI Surface
 
 Primary browser commands:
 
 - `info`, `tabs`, `tab`, `activate`, `new-tab`, `close-tab`
-- `eval`, `eval-file`, `query`, `cdp`, `detach`
+- `groups list|get|create|update|delete|move|add-tabs|remove-tabs`
+- `click`, `hover`, `move`, `scroll`, `type`, `press`
+- `eval`, `eval-file`, `query`, `cdp`, `cdp-events`, `detach`
 - `navigate`, `reload`, `screenshot`, `pdf`, `network`, `cookies`
+- `share start|links|status|stop`
 - `pair`, `unpair`, `disable`, `whitelist`, `clients`, `switch`
 
 Management commands:
@@ -68,6 +75,7 @@ State lives under `~/.browser-bridge/`:
 - `tokens.json` — extension/CLI client tokens keyed by client name.
 - `config.json` — CLI persistent config (`server`, `token`, `name`).
 - `server.pid` — local server PID.
+- `shares.json` — persistent sharing definitions and login settings.
 
 Auth model:
 
@@ -85,13 +93,13 @@ Auth model:
 - CDP commands default to auto-detach after each command to avoid a persistent Chrome debugger warning bar.
 - Screenshots use `Page.captureScreenshot`; long screenshots stitch viewport captures with PNG row copying.
 - The extension uses `chrome.alarms` for keepalive and reconnect because MV3 service workers do not reliably survive `setTimeout`.
-- Whitelist enforcement only applies to tab/page actions. Non-page actions like `tabs.list`, `ping`, and network log retrieval are intentionally unrestricted.
+- Whitelist enforcement applies to configured tab/page actions and all tabs affected by group mutations. Metadata listing, network/cookie retrieval and `ping` are intentionally unrestricted.
 - `bun build` bundles all dependencies into single JS files for npm distribution.
 
 ## Extension Notes
 
 - Manifest: `extension/manifest.json`.
-- Required permissions: `tabs`, `debugger`, `storage`, `alarms`.
+- Required permissions: `tabs`, `tabGroups`, `debugger`, `storage`, `alarms`, `offscreen`.
 - Popup state is stored in `chrome.storage.local`.
 - The extension auto-disables after idle timeout or too many consecutive command failures.
 - Chrome Web Store uploads should use the extension zip asset from the GitHub Release. Do not upload CRX unless intentionally using Verified CRX Uploads.
@@ -119,7 +127,10 @@ Auth model:
    git push origin v<version>
    ```
 
-6. For Chrome Web Store, use the extension zip asset attached to the GitHub Release and upload that zip. Web Store signs the CRX automatically.
+6. Confirm the Publish workflow succeeds: npm uses Trusted Publishing via GitHub OIDC, and GitHub Release includes the extension ZIP. No npm token is required.
+7. For Chrome Web Store, use the extension zip asset attached to the GitHub Release and upload that zip. Web Store signs the CRX automatically. Store review is separate from npm/GitHub publication.
+
+Detailed architecture, CI and release instructions: [docs/development.md](docs/development.md).
 
 ## Development Guidelines
 
@@ -129,3 +140,4 @@ Auth model:
 - When adding browser actions, decide whether the action is tab-scoped and should be whitelist-checked.
 - Avoid writing tests or commands that touch the user's real `~/.browser-bridge/`; use isolated HOME envs.
 - Do not commit generated temporary screenshots or icon candidates. Keep only intentional assets in `docs/` and `extension/icons/`.
+- Keep README focused on installation, feature coverage and usage; link technical details from `docs/README.md`. Synchronize English/Chinese guides when behavior changes.

@@ -8,17 +8,20 @@ Browser Bridge does not collect, sell, or share user data with the extension aut
 
 The extension can access browser data only to perform commands requested by the user through their paired Bridge Server and CLI. Depending on the command, this may include:
 
-- Tab metadata such as URL, title, active state, and tab id.
+- Tab metadata such as URL, title, active state, tab id, window id, and group membership; group titles, colors, and collapsed state.
 - Page content returned by JavaScript evaluation or DOM query commands.
 - Screenshots or PDFs generated from a target tab.
 - Network metadata for a target tab through Chrome DevTools Protocol.
 - Cookies for a target tab URL context through Chrome DevTools Protocol.
+- Live page frames and mouse, keyboard, or text input when the user enables tab sharing.
 
 ## Data Transmission
 
 Command results are sent from the browser extension to the Bridge Server configured by the user. By default, the Bridge Server runs locally at `127.0.0.1`.
 
 If the user configures a remote Bridge Server, browser data may be transmitted to that user-configured server. Browser Bridge does not transmit data to servers operated by the extension author.
+
+When the user creates a live share, the configured Bridge Server relays page frames to connected viewers and viewer input to the source browser. Share access uses the server's configured viewer authentication; sharing outside loopback requires a username and password. Users choose the server and who can access the share.
 
 ## Local Storage
 
@@ -31,6 +34,7 @@ The extension stores the following data in `chrome.storage.local`:
 - Idle timeout and retry settings.
 
 The CLI and Bridge Server store their local state under `~/.browser-bridge/`.
+This includes pairing credentials, CLI configuration, and saved share definitions and login settings.
 
 ## Permissions
 
@@ -38,8 +42,10 @@ Browser Bridge requests only the permissions needed for its browser-control purp
 
 - `debugger`: Uses Chrome DevTools Protocol for tab automation, JavaScript evaluation, screenshots, PDF export, network inspection, cookies, and raw CDP commands.
 - `tabs`: Lists, creates, activates, closes, navigates, and reloads browser tabs.
+- `tabGroups`: Reads and changes native tab groups, including titles, colors, collapsed state, position, and member tabs.
 - `storage`: Stores pairing state and extension settings locally.
 - `alarms`: Handles Manifest V3 service worker keepalive, reconnects, and idle timeout.
+- `offscreen`: Runs browser-native video encoding in a local extension document for live sharing.
 
 ## Limited Use
 
@@ -50,6 +56,7 @@ Browser Bridge does not sell user data, use user data for advertising, transfer 
 ## User Control
 
 Users can disable the extension from the popup at any time. Users can also unpair the extension, revoke stored credentials, reset CLI configuration, or stop the Bridge Server.
+Users can restrict page operations with the popup whitelist and stop individual live shares through the CLI.
 
 ## Remote Code
 

@@ -1,4 +1,6 @@
-# CLI tab sharing
+# Live tab sharing
+
+[Documentation](README.md) · [中文](tab-sharing_CN.md) · [Deployment](deployment.md)
 
 Sharing is served by the existing Bridge HTTP server, on the same host and port
 (default `127.0.0.1:52853`). `/api/...` serves CLI commands, `/ext` connects the
@@ -81,6 +83,9 @@ WebSocket upgrades. HTTP Basic credentials need TLS on untrusted networks.
   detach after five idle minutes; operations refresh the deadline and live
   capture keeps it alive. A crashed capture's lease expires after 45 seconds.
 
+<details>
+<summary>WebCodecs streaming and capture lifecycle</summary>
+
 ## WebCodecs streaming
 
 All three link modes use VP8 streaming by default.
@@ -106,3 +111,5 @@ A secure viewer context (localhost or HTTPS) is required for WebCodecs.
 Loading the HTML page or reading `share status` does not attach a debugger. Capture starts only after a viewer completes the WebSocket handshake and a shareable source tab exists. If no source tab is available, the viewer remains connected in a paused state without an attachment.
 
 When the viewer disconnects, the screencast, encoder and share lease are released immediately. The in-memory channel remains available for a quick reconnect and is destroyed no later than 5 minutes after the viewer was last confirmed alive. HTTP status requests do not create or reset the channel. The saved definition and permanent URL remain, so reopening the link recreates the channel. A connected viewer keeps the share alive even without keyboard or mouse input. Explicit `share stop` still removes the definition.
+
+</details>

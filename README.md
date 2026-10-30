@@ -1,474 +1,117 @@
 # Browser Bridge CLI
 
-[English](./README.md) | [中文](./README_CN.md)
+[English](README.md) | [中文](README_CN.md) · [Documentation](docs/README.md) · [Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases)
 
-Control an already-open Chrome/Edge browser from a CLI through a paired browser extension.
+Control your already-open Chrome or Edge from a terminal or AI agent. Reuse existing tabs and login sessions through a paired extension, locally or across machines.
 
-![Browser Bridge CLI introduction](./docs/browser-bridge-intro.png)
+## Features
 
-## AI Agent Skills
+| Area | What you can do |
+| --- | --- |
+| Tabs & groups | List, inspect, open, activate, navigate, reload and close tabs; filter by window/group; create, rename, recolor, collapse, move and dissolve groups; move tabs between groups. |
+| Mouse & keyboard | Click, double/right click, hover, move, scroll, insert text and send key codes/modifiers. A visible cursor shows automated input in screenshots and live shares. |
+| DOM & JavaScript | Query CSS selectors, filter visible/in-viewport elements, evaluate expressions or local script files. |
+| Capture & export | Viewport, full-page, clipped and stitched long screenshots; height caps and sticky-header handling; PDF export. |
+| Network & cookies | Read/clear per-tab network logs and filter cookies by URL, domain or name. |
+| Live remote control | Fixed-tab, follow-active-tab and selectable-tab links; click, drag, scroll, text and Chinese IME; persistent links. |
+| Advanced browser operations | Upload files, drag/drop, read browser events and send native browser commands. |
+| Multiple browsers | Pair multiple Chrome/Edge instances, list clients and choose the active browser. |
+| Deployment & controls | Local or remote CLI/server/browser, one-time pairing, revocable tokens, site whitelist, idle shutdown and Linux systemd service. |
 
-### Browser Bridge CLI
+## Quick start
+
+Requires Node.js 20+ or Bun 1.0+, and Chrome/Edge. Normal CLI usage supports macOS, Windows and Linux.
+
+**1. Install the CLI and extension.**
 
 ```bash
-# Install to Claude Code
-npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli --agent claude-code
-
-# Install to multiple agents
-npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli --agent claude-code codex
-
-# Install globally
-npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli --agent claude-code -g
+npm install -g browser-bridge-cli
 ```
 
-### Browser Bridge CLI Skill Generator
-
-Use this skill to create workflow skills for operating one or more websites with Browser Bridge CLI.
-
-```bash
-# Install to Claude Code
-npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli-skill-generator --agent claude-code
-
-# Install to multiple agents
-npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli-skill-generator --agent claude-code codex
-
-# Install globally
-npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli-skill-generator --agent claude-code -g
-```
-
-## Quick Start
-
-This is the default setup: CLI, Bridge Server, browser, and extension all run on the same machine.
+Install [Browser Bridge from the Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/cmakbjpcmibhleibmgaiflpoencnelol), or load the ZIP from [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases). Store review can lag behind releases; use a matching release extension for the latest features.
 
 <details>
-<summary>Local topology</summary>
+<summary>Load the extension manually / run without a global install</summary>
 
-```mermaid
-graph LR
-    CLI["Local CLI Client"]
-    Bridge["Local Bridge Server"]
-    Ext["Local Extension Client"]
+Download and unzip `browser-bridge-extension-v<version>.zip`. Open `chrome://extensions` or `edge://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder. From source, select `extension/`. Reload it after updating; tab groups require the `tabGroups` permission.
 
-    CLI -->|"http://127.0.0.1:52853 + local token"| Bridge
-    Bridge -->|"ws://127.0.0.1:52853/ext"| Ext
-```
+You can also replace `browser-bridge-cli` in the examples with `npx browser-bridge-cli` or `bunx browser-bridge-cli`.
 
 </details>
 
-### 1. Install
+**2. Start the local Bridge and pair.**
 
 ```bash
-# Global install
-npm i -g browser-bridge-cli
-
-# Or use directly
-npx browser-bridge-cli info
-
-# Or with Bun
-bunx browser-bridge-cli info
+browser-bridge-cli server start
+browser-bridge-cli server gen-pair
 ```
 
-### 2. Install browser extension
+Open the extension popup, enable it, keep `ws://127.0.0.1:52853/ext`, enter the 6-digit code and click **Pair**. Each code is single-use and expires in 5 minutes.
 
-Install Browser Bridge from the [Chrome Web Store](https://chromewebstore.google.com/detail/browser-bridge/cmakbjpcmibhleibmgaiflpoencnelol).
+**3. Find a tab and control it.**
+
+```bash
+browser-bridge-cli info
+browser-bridge-cli tabs
+browser-bridge-cli query 'button,a,input' --in-viewport -t 123
+browser-bridge-cli screenshot -t 123 -o page.png
+```
+
+Replace `123` with a tab ID from `tabs`. Local commands read `~/.browser-bridge/` automatically. Use `browser-bridge-cli --help` or `<command> --help` for all flags.
+
+## Guides
+
+| Guide | Contents |
+| --- | --- |
+| [Commands](docs/commands.md) | Complete command map, tabs/groups, input, DOM, capture, network, CDP files/events. |
+| [Live sharing](docs/tab-sharing.md) | Three viewer modes, remote input, authentication, capture lifecycle and streaming limits. |
+| [Deployment & troubleshooting](docs/deployment.md) | Pairing, multiple browsers, config, two/three-machine setups, permissions and common errors. |
+| [Privacy policy](PRIVACY.md) | Data flow, local storage, permissions and user control. |
 
 <details>
-<summary>Manual installation</summary>
-
-For manual installation, download the extension asset from [GitHub Releases](https://github.com/dreamhunter2333/browser-bridge-cli/releases):
-
-- `.zip`: unzip it and load the folder with **Load unpacked**.
-- Source: load the `extension/` directory from the source code.
-
-1. Open Chrome/Edge -> `chrome://extensions`
-2. Enable **Developer mode**
-3. Click **Load unpacked** -> select the extension directory
-
-</details>
-
-### 3. Start server and pair extension
+<summary>Examples: tab groups, input and sharing</summary>
 
 ```bash
-npx browser-bridge-cli server start
-npx browser-bridge-cli server gen-pair
-```
-
-Open the extension popup, enable the toggle, keep `ws://127.0.0.1:52853/ext`, enter the 6-digit code, and click **Pair**.
-
-### 4. Verify
-
-```bash
-npx browser-bridge-cli info
-npx browser-bridge-cli tabs
-```
-
-Local CLI commands do not need `--server`. The CLI reads local server state from `~/.browser-bridge/`, and the server binds to `127.0.0.1` by default.
-
-<details>
-<summary>Architecture</summary>
-
-```mermaid
-graph LR
-    CLI["CLI Client"]
-    Bridge["Bridge Server (:52853)"]
-    Ext["Extension Client"]
-
-    CLI -->|"HTTP + token"| Bridge
-    Bridge -->|"WebSocket"| Ext
-```
-
-</details>
-
-## Compared with Playwright CLI and OpenCLI
-
-Playwright CLI is a strong browser automation and testing tool. Its [attach flow](https://playwright.dev/agent-cli/commands/attach) and [MCP extension mode](https://playwright.dev/mcp/configuration/browser-extension) can now connect to existing Chrome/Edge sessions through CDP, Playwright server endpoints, or the Playwright Extension, so it can reuse logged-in sessions and existing browser tabs.
-
-OpenCLI turns websites, browser sessions, Electron apps, and local tools into CLI surfaces for humans and AI agents. It is strongest when you want deterministic site commands, reusable adapters, and a broader command hub.
-
-Browser Bridge CLI is not trying to replace Playwright tests or OpenCLI adapters. It is a small control bridge for an already-open daily browser, especially when commands need to come from another terminal, another agent, or another machine.
-
-| Area | Browser Bridge CLI | Playwright CLI | OpenCLI |
-| --- | --- | --- | --- |
-| Product focus | Remote-control bridge for a user's real Chrome/Edge session | Automation, testing, and agent workflows built on Playwright | CLI hub for websites, browser sessions, Electron apps, and local tools |
-| Browser connection | Paired extension -> Bridge Server -> CLI | Launched browser, CDP attach, Playwright endpoint, or Playwright Extension | Browser extension plus local daemon, with profile/session selection |
-| Existing logged-in browser | Default use case | Supported by CDP attach or extension mode | Supported through Chrome session reuse |
-| Tab model | Lists, switches, and controls open tabs by tab id, subject to whitelist rules | Usually operates on a Playwright session/page; extension mode attaches to selected/authorized tabs instead of acting as a global tab-control bridge | Works through browser sessions, targets, and adapters; less focused on global tab brokering |
-| Remote topology | Built in: CLI, server, and extension can run on one, two, or three machines | Usually local; remote use is via CDP endpoint, Playwright server, tunnel, or MCP setup | Primarily local browser/daemon workflow |
-| Command surface | Direct CLI primitives: tabs, eval, query, screenshot, PDF, cookies, network, raw CDP | Rich automation model: locators, assertions, snapshots, tracing, storage state, test runner | Site adapters, browser primitives, Electron app adapters, and registered local CLI tools |
-| Auth model | Pair codes plus server/client tokens; remote CLIs can be paired and revoked | Depends on Playwright session, CDP endpoint, MCP client, or extension permission flow | Reuses Chrome login state through the extension/daemon setup |
-
-Use Playwright CLI when you want repeatable browser automation, tests, locators, assertions, tracing, or Playwright's agent tooling. Use OpenCLI when you want deterministic commands and adapters for specific sites, desktop apps, or local tools. Use Browser Bridge CLI when you want a lightweight command bridge into a real browser that is already open, with explicit tab control and remote-machine deployment as first-class workflows.
-
-## Advanced Deployment
-
-Use these topologies when the CLI is not on the same machine as the extension and/or Bridge Server.
-
-### Two Machines
-
-<details>
-<summary><strong>Two Machines: Server + Extension together, CLI remote</strong></summary>
-
-Use this topology when the browser and extension run on one machine, and commands are sent from another machine.
-
-```mermaid
-graph LR
-    CLI["Machine B: CLI Client"]
-    Bridge["Machine A: Bridge Server"]
-    Ext["Machine A: Extension Client"]
-
-    CLI -->|"http://<browser-machine-ip>:52853 + client token"| Bridge
-    Bridge -->|"ws://127.0.0.1:52853/ext"| Ext
-```
-
-On Machine A, start the server on an address reachable from Machine B:
-
-```bash
-npx browser-bridge-cli server start --host 0.0.0.0 --port 52853 --token <server-token>
-npx browser-bridge-cli server gen-pair
-```
-
-In the extension popup on Machine A:
-
-1. Enable the extension toggle.
-2. Keep the server URL as `ws://127.0.0.1:52853/ext`.
-3. Enter the 6-digit pairing code and click **Pair**.
-
-Generate a fresh pairing code on Machine A for the remote CLI:
-
-```bash
-npx browser-bridge-cli server gen-pair
-```
-
-On Machine B, pair with Machine A:
-
-```bash
-npx browser-bridge-cli pair --server http://<browser-machine-ip>:52853 -n <cli-name>
-```
-
-Then run commands from Machine B:
-
-```bash
-npx browser-bridge-cli info
-npx browser-bridge-cli tabs
-npx browser-bridge-cli new-tab https://example.com
-```
-
-Notes:
-
-- Machine A must allow inbound TCP `52853` from Machine B.
-- Pairing codes are one-time-use and expire in 5 minutes.
-- Do not run `server ...` commands from Machine B.
-
-</details>
-
-### Three Machines
-
-<details>
-<summary><strong>Three Machines: Server, Extension, and CLI separated</strong></summary>
-
-Use this topology when the Bridge Server is hosted separately from both the browser machine and the CLI machine.
-
-```mermaid
-graph LR
-    CLI["Machine C: CLI Client"]
-    Bridge["Machine A: Bridge Server"]
-    Ext["Machine B: Extension Client"]
-
-    CLI -->|"http://<server-ip>:52853 + client token"| Bridge
-    Ext -->|"ws://<server-ip>:52853/ext"| Bridge
-```
-
-On Machine A, start the server:
-
-```bash
-npx browser-bridge-cli server start --host 0.0.0.0 --port 52853 --token <server-token>
-npx browser-bridge-cli server gen-pair
-```
-
-On Machine B, load the extension and pair it:
-
-1. Enable the extension toggle.
-2. Set the server URL to `ws://<server-ip>:52853/ext`.
-3. Enter the 6-digit pairing code generated on Machine A.
-4. Click **Pair**.
-
-Generate a fresh pairing code on Machine A for the CLI:
-
-```bash
-npx browser-bridge-cli server gen-pair
-```
-
-On Machine C, pair with Machine A:
-
-```bash
-npx browser-bridge-cli pair --server http://<server-ip>:52853 -n <cli-name>
-```
-
-Then run commands from Machine C:
-
-```bash
-npx browser-bridge-cli info
-npx browser-bridge-cli tabs
-npx browser-bridge-cli new-tab https://example.com
-```
-
-Notes:
-
-- Machine A must allow inbound TCP `52853` from Machines B and C.
-- Use a private network, VPN, SSH tunnel, or HTTPS reverse proxy when possible.
-- Keep `<server-token>` on Machine A only.
-
-</details>
-
-## Tab groups
-
-```bash
-browser-bridge-cli tabs --json
-browser-bridge-cli tabs --json --group 12
-browser-bridge-cli tabs --json --group -1 --window 1
-browser-bridge-cli groups
-browser-bridge-cli groups list --window 1 --color blue --expanded
-browser-bridge-cli groups get 12
-browser-bridge-cli groups create 101 102 --title 'Work' --color blue
-browser-bridge-cli groups update 12 --title 'Research' --color purple --collapsed
-browser-bridge-cli groups update 12 --expanded
-browser-bridge-cli groups add-tabs 12 103 104
-browser-bridge-cli groups remove-tabs 103
-browser-bridge-cli groups move 12 --index 0
+browser-bridge-cli tabs --json --group -1
+browser-bridge-cli groups create 101 102 --title Work --color blue
+browser-bridge-cli groups add-tabs 12 103
+browser-bridge-cli groups update 12 --collapsed
 browser-bridge-cli groups move 12 --window 2 --index -1
-browser-bridge-cli groups delete 12
+browser-bridge-cli groups delete 12                 # Keeps the tabs open
+
+browser-bridge-cli click '#search' -t 123
+browser-bridge-cli type 'hello' -t 123
+browser-bridge-cli press Enter --key-code 13 -t 123
+browser-bridge-cli scroll down 500 -t 123
+browser-bridge-cli screenshot --long --max-height 12000 -t 123 -o long.png
+
+browser-bridge-cli share start                     # Returns all three viewer links
+browser-bridge-cli share links --tab 123
 ```
 
-Requires the updated extension with the `tabGroups` permission; reload a locally loaded extension after updating it. Chrome and Edge use their native tab group APIs.
+</details>
 
-`groups` is shorthand for `groups list`. List/get/create/update/move return group metadata plus ordered `tabIds`. `tabs --json` includes each tab's `groupId`, with `-1` meaning ungrouped; existing plain-text tab output is preserved. List filters include `--window`, title patterns, color, and collapsed/expanded state. Colors are grey, blue, red, yellow, green, pink, purple, cyan and orange.
+<details>
+<summary>AI agent skills</summary>
 
-Create requires at least one existing tab. `delete` dissolves the group and keeps its tabs open; removing its last tab also removes the group. `add-tabs` can move tabs from another group or window. `move` moves the entire group within a normal window or to another normal window; index `-1` means the end. IDs belong to the selected browser session. Every group command pins the browser throughout its requests. Mutations enforce the site whitelist for every affected tab before applying changes.
-
-## Mouse, keyboard and visible elements
+Install the [browser control skill](skills/browser-bridge-cli/SKILL.md), the [website workflow skill generator](skills/browser-bridge-cli-skill-generator/SKILL.md), or both:
 
 ```bash
-npx browser-bridge-cli query 'button,a,input' --visible -t 123
-npx browser-bridge-cli query 'button,a,input' --in-viewport -l 20 -t 123
-npx browser-bridge-cli click '#submit' -t 123
-npx browser-bridge-cli click --x 100 --y 200 --button right -t 123
-npx browser-bridge-cli click '#item' --count 2 -t 123
-npx browser-bridge-cli hover '#menu' -t 123
-npx browser-bridge-cli move 100 200 -t 123
-npx browser-bridge-cli scroll 500 -t 123
-npx browser-bridge-cli scroll up 300 --selector '.results' -t 123
-npx browser-bridge-cli scroll 0 --delta-x 200 --x 100 --y 200 -t 123
-npx browser-bridge-cli click '#search' -t 123
-npx browser-bridge-cli type '御坂 hello' -t 123
-npx browser-bridge-cli press Enter --key-code 13 -t 123
-npx browser-bridge-cli press a --code KeyA --key-code 65 --modifiers 2 -t 123
-npx browser-bridge-cli press a --code KeyA --key-code 65 --modifiers 4 --commands selectAll -t 123
+npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli --agent claude-code codex
+npx skills add dreamhunter2333/browser-bridge-cli/skills/browser-bridge-cli-skill-generator --agent claude-code codex
 ```
 
-Use these commands for common input without CDP JSON. Selector targets are CSS selectors in the main document and must match exactly one visible element. `click` and `hover` scroll it into view and reject covered targets. Coordinates and wheel deltas use viewport CSS pixels; positive deltas scroll down/right. With no direction or delta, `scroll` defaults to down 500; explicitly supplied zero deltas stay zero. Wheel events target the viewport center by default; use `--selector` or paired `--x/--y` for nested scroll containers.
+Choose one agent if needed; add `-g` for a global installation.
 
-`query --visible` filters layout visibility, including offscreen elements; `--in-viewport` also requires viewport intersection. Neither query filter checks occlusion. Filtering happens before `--limit`, and the existing query result format is preserved.
+</details>
 
-All input commands accept `-t` and `-k`; each input command pins its browser client and target tab for its entire duration, then detaches unless `-k` is used. If the pinned browser disconnects, the command fails. Keep the same selected browser across separate commands in a manual key sequence. `type` inserts text into the focused field without keyboard events. `press` forwards the supplied key, `--code`, `--key-code`, `--modifiers` bitmask (Alt=1, Control=2, Meta=4, Shift=8), optional `--text` and native `--commands`. The caller handles key mapping, combinations and platform behavior; no chord parsing or platform detection is performed. By default it sends down/up; use `--phase down -k` and `--phase up` for caller-managed sequences on the same explicit tab. Use `-k` on intermediate events and detach after releasing every key. Successful input returns `{ "ok": true }`; verify the resulting page state separately.
+<details>
+<summary>Product preview</summary>
 
-Automated pointer input displays a blue, click-through cursor in the page, with a glow while pressed. The marker stays at the last position until navigation and appears in page screenshots and live shares, including over modal dialogs. It uses DOM APIs compatible with Trusted Types and adds no scripting permission.
+![Browser Bridge CLI introduction](docs/browser-bridge-intro.png)
 
-## Raw CDP files and events
+</details>
 
-Raw CDP now accepts `--session <id>` for child iframe sessions (Chrome 125+).
-`cdp-events -t <tab-id>` starts/reads buffered native events; resume with
-`--stream <id> --since <cursor>` and optionally filter with `--method` or
-`--session`. This is polling, not a blocking wait or WebSocket subscription.
-Keep the same tab and use `-k` throughout a sequence. File paths refer to the
-browser's machine.
+Contributor documentation: [development and releases](docs/development.md).
 
-## Live tab sharing
-
-Capture and debugger attachment begin only after a viewer completes its WebSocket handshake. When the last viewer disconnects, capture stops and the share lease is released immediately. The idle in-memory channel is destroyed within 5 minutes of its last confirmed viewer liveness; its saved URL remains valid and recreates the channel on demand. Connected viewers do not need to send input to keep the share alive.
-
-Sharing reuses the Bridge port (default `52853`) at `/share/<stable-hash>/`.
-There is no second listener or credential in the URL.
-
-```bash
-browser-bridge-cli share start                 # Start all three viewer modes
-browser-bridge-cli share links --tab 123       # Get three links; fixed-tab target is optional
-browser-bridge-cli share status 'http://127.0.0.1:52853/share/HASH/'
-browser-bridge-cli share stop 'http://127.0.0.1:52853/share/HASH/'
-```
-
-- Both commands return `links.tab`, `links.active` and `links.browser`.
-  `share links --tab <id>` selects the fixed target (default: current tab);
-  `--client` selects the browser. Capture begins when a compatible viewer connects. Definitions
-  persist in `~/.browser-bridge/shares.json`. Reopen the same URL after a Bridge
-  restart to resume. The hash uses the paired client name and tab ID, `active`, or
-  `browser`. Fixed tab IDs may change after a browser restart.
-- Loopback listeners require no viewer login by default. Non-loopback listeners
-  require `--username viewer` and a password in `BROWSER_BRIDGE_SHARE_PASSWORD`
-  (variable name configurable with `--password-env`). Browsers use HTTP Basic
-  login; use HTTPS on public networks. CLI/extension token auth is unchanged.
-- `links.browser` defaults to a searchable, collapsible, resizable sidebar with a top-tab
-  option, filtering internal pages, blocked URLs and the viewer. Multiple share paths coexist, but one tab has one capture.
-- Click, drag, scroll, direct typing and Chinese IME are supported. All sharing
-  uses WebCodecs VP8, up to 1920 × 1080, with a 2 Mbps / ~15 fps target.
-  No system libraries or transport switches are needed. Reload the updated
-  extension with its `offscreen` permission. Unsupported codecs produce an
-  explicit error; the viewer requires localhost or HTTPS. VP8 is lossy and
-  actual bitrate/frame rate varies. Wide source windows still produce small
-  text when fitted into narrow viewers.
-- Ordinary CLI commands and detach do not interrupt capture. Idle debugger
-  connections detach after **5 minutes**; operations refresh the timeout and
-  live capture keeps it alive.
-
-See [CLI tab sharing](docs/tab-sharing.md) for details.
-
-## Command Rules
-
-- Run `server ...` commands only on the Bridge Server machine.
-- Do not pass `--server` to `server ...` commands.
-- On a remote CLI machine, `pair` must include `--server http://<server-host>:52853`.
-- After remote CLI pairing, saved config lets normal browser-control commands omit `--server`.
-- For one-off remote commands, pass `--server http://<server-host>:52853 --token <client-token>`.
-
-## Token Model
-
-- Server token: admin credential stored on the Bridge Server machine. It can generate pairing codes and revoke client tokens.
-- Extension client token: stored by the browser extension after pairing. It authenticates the extension WebSocket.
-- CLI client token: stored by `pair --server` on a remote CLI machine. It can execute browser commands but cannot generate pairing codes or manage the server.
-
-Pairing codes are one-time-use and expire in 5 minutes. Generate one code per client.
-
-## CLI Commands
-
-`bunx browser-bridge-cli ...` can be used anywhere `npx browser-bridge-cli ...` appears below.
-
-```bash
-# Server management
-npx browser-bridge-cli server start [--host 0.0.0.0] [--port 9000] [--token xxx]
-npx browser-bridge-cli server stop
-npx browser-bridge-cli server status
-npx browser-bridge-cli server gen-pair
-npx browser-bridge-cli server install-service [--uninstall]   # systemd daemon (Linux)
-
-# Pairing
-npx browser-bridge-cli pair [-n name]                 # Local shortcut: generate an extension pairing code
-npx browser-bridge-cli pair --server http://remote    # Remote CLI: enter code generated on the server
-npx browser-bridge-cli unpair                         # Revoke + clear credentials
-
-# Configuration
-npx browser-bridge-cli config get                    # Show config (tokens masked)
-npx browser-bridge-cli config set <key> <value>      # Set server, token, or name
-npx browser-bridge-cli config reset                  # Clear all config
-
-# Browser control
-npx browser-bridge-cli info                          # Server status + clients
-npx browser-bridge-cli tabs                          # List all tabs
-npx browser-bridge-cli tab <id>                      # Tab details
-npx browser-bridge-cli eval <expr> [-t id] [-k]      # Execute JS
-npx browser-bridge-cli eval-file <file> [-t id]      # Execute JS file
-npx browser-bridge-cli query <selector> [-t id]      # Query DOM
-npx browser-bridge-cli click [selector] [--x px --y px] [-t id]
-npx browser-bridge-cli hover <selector> [-t id]
-npx browser-bridge-cli move <x> <y> [-t id]
-npx browser-bridge-cli scroll [direction] [pixels] [--delta-x px] [--selector css] [-t id]
-npx browser-bridge-cli type <text> [-t id]
-npx browser-bridge-cli press <key> [-t id]
-npx browser-bridge-cli new-tab [url]                 # Create tab
-npx browser-bridge-cli close-tab <id>                # Close tab
-npx browser-bridge-cli activate <id>                 # Switch tab
-npx browser-bridge-cli navigate <url> [-t id]        # Navigate
-npx browser-bridge-cli reload [-t id] [--no-cache]   # Reload
-npx browser-bridge-cli screenshot [-o file] [-f] [--long --max-height px --hide-sticky] [--x px --y px --width px --height px] # Screenshot
-npx browser-bridge-cli pdf [-o file] [-t id]         # PDF export
-npx browser-bridge-cli network [-l limit] [-t id] [--clear] # CDP network log for a tab
-npx browser-bridge-cli cookies [-u url] [-d domain] [-t id]  # CDP cookies for a tab URL context
-npx browser-bridge-cli cdp <method> [params] [-t id] # Raw CDP command
-npx browser-bridge-cli detach [-t id]                # Detach debugger
-npx browser-bridge-cli clients                       # List clients
-npx browser-bridge-cli switch <clientId>             # Switch active client
-```
-
-Long screenshots use the current viewport width and adapt height from the page. The default maximum height is `30000`; use `--max-height` to cap pages with very large or infinite scroll content. Fixed elements are hidden after the first slice to avoid repeated headers; sticky elements are preserved by default and can be hidden with `--hide-sticky`.
-
-Network and cookie commands use CDP on the target tab. `network` enables and reads a per-tab CDP Network cache; it does not use extension-wide `webRequest` access.
-
-```bash
-npx browser-bridge-cli screenshot --long -o page.png
-npx browser-bridge-cli screenshot --long --max-height 12000 -o page.png
-npx browser-bridge-cli screenshot --long --hide-sticky -o page.png
-```
-
-Global options: `-s, --server <url>`, `--token <token>`
-
-Config priority: CLI flags > env vars (`BROWSER_BRIDGE_URL`, `BROWSER_BRIDGE_TOKEN`) > `~/.browser-bridge/config.json` > `~/.browser-bridge/state.json`
-
-## Supported Platforms
-
-- Windows, macOS, and Linux are supported for normal CLI usage.
-- `server install-service` is Linux-only because it installs a systemd user service.
-- CI runs build and e2e tests on both `ubuntu-latest` and `windows-latest`.
-
-## Development
-
-```bash
-bun install
-bun run dev -- info          # Run CLI in dev mode
-bun run dev:server           # Run server in dev mode
-bun run build                # Build for npm
-bun run test                 # Run Playwright e2e tests
-```
-
-## Security
-
-- Bridge binds to `127.0.0.1` by default.
-- Server token controls admin operations.
-- Client tokens can execute browser commands but cannot generate pair codes.
-- Rate limiting on pairing: HTTP 5/min per IP, WS 5 failures per connection.
-- Pairing codes are one-time-use and expire in 5 minutes.
-- Token revoke disconnects WebSocket clients.
-- Whitelist restricts per-tab operations by URL pattern.
-
-Privacy policy: [PRIVACY.md](./PRIVACY.md)
-
-## License
-
-MIT
+MIT License.
