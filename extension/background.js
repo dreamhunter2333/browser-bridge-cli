@@ -491,15 +491,14 @@ async function showCursor(tabId, input, sessionId) {
       cursor.id = 'browser-bridge-cursor';
       cursor.setAttribute('aria-hidden', 'true');
       cursor.setAttribute('popover', 'manual');
-      cursor.style.cssText = 'all:initial!important;position:fixed!important;left:0!important;top:0!important;width:32px!important;height:40px!important;pointer-events:none!important;z-index:2147483647!important;';
+      cursor.style.cssText = 'all:initial!important;position:fixed!important;left:0!important;top:0!important;width:20px!important;height:28px!important;pointer-events:none!important;z-index:2147483647!important;filter:drop-shadow(0 1px 1px #0f172a40)!important;';
       const shadow = cursor.attachShadow({ mode: 'closed' });
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('width', '32'); svg.setAttribute('height', '40');
-      svg.setAttribute('viewBox', '0 0 32 40');
+      svg.setAttribute('width', '20'); svg.setAttribute('height', '28');
+      svg.setAttribute('viewBox', '0 0 20 28');
       svg.style.cssText = 'overflow:visible;pointer-events:none';
       for (const [tag, attributes] of [
-        ['circle', { cx: 1, cy: 1, r: 12, fill: '#0ea5e9', 'fill-opacity': '.25' }],
-        ['path', { d: 'M1 1V24L7 19L13 31L18 29L12 17L22 16Z', fill: '#0ea5e9', stroke: 'white', 'stroke-width': 2, 'stroke-linejoin': 'round' }],
+        ['path', { d: 'M1 1V21L6.2 16.5L10.6 25.5L14.1 23.8L9.7 14.9L17 14.5Z', fill: 'currentColor', stroke: 'white', 'stroke-width': 1.5, 'stroke-linejoin': 'round' }],
       ]) {
         const child = document.createElementNS('http://www.w3.org/2000/svg', tag);
         for (const [name, value] of Object.entries(attributes)) child.setAttribute(name, String(value));
@@ -516,7 +515,7 @@ async function showCursor(tabId, input, sessionId) {
     cursor.dataset.x = ${JSON.stringify(String(input.x))};
     cursor.dataset.y = ${JSON.stringify(String(input.y))};
     cursor.dataset.pressed = ${JSON.stringify(String(input.type === 'mousePressed' || !!input.buttons))};
-    cursor.style.setProperty('filter', cursor.dataset.pressed === 'true' ? 'drop-shadow(0 0 6px #0284c7)' : 'none', 'important');
+    cursor.style.setProperty('color', cursor.dataset.pressed === 'true' ? '#2563eb' : '#111827', 'important');
     clearTimeout(cursor.__browserBridgeHideTimer);
     cursor.__browserBridgeHideTimer = setTimeout(() => cursor.remove(), 3000);
   })()`;

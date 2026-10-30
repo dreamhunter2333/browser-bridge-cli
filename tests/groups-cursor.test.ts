@@ -195,11 +195,12 @@ test.describe('Tab groups and visible cursor', () => {
       await expect(cursor).toHaveAttribute('data-x', '300');
       await expect(cursor).toHaveAttribute('data-y', '200');
       expect(await cursor.evaluate(el => getComputedStyle(el).pointerEvents)).toBe('none');
+      expect(await cursor.evaluate(el => ({ width: el.getBoundingClientRect().width, height: el.getBoundingClientRect().height }))).toEqual({ width: 20, height: 28 });
       const shot = await cli(['screenshot', '-t', id, '-o', file]);
       expect(shot.code, shot.stderr).toBe(0);
       const png = PNG.sync.read(fs.readFileSync(file));
       const at = (200 + 12) * png.width * 4 + (300 + 4) * 4;
-      expect(Array.from(png.data.subarray(at, at + 3))).toEqual([14, 165, 233]);
+      expect(Array.from(png.data.subarray(at, at + 3))).toEqual([17, 24, 39]);
       await json(['click', '--x', '150', '--y', '130', '-t', id]);
       expect(await page.evaluate(() => (window as any).clicked)).toBe(true);
       await expect(cursor).toHaveAttribute('data-x', '150');
@@ -207,8 +208,10 @@ test.describe('Tab groups and visible cursor', () => {
       const down = await cli(['cdp', 'Input.dispatchMouseEvent', JSON.stringify({ type: 'mousePressed', x: 150, y: 130, button: 'left', buttons: 1, clickCount: 1 }), '-t', id, '-k']);
       expect(down.code, down.stderr).toBe(0);
       await expect(cursor).toHaveAttribute('data-pressed', 'true');
+      expect(await cursor.evaluate(el => getComputedStyle(el).color)).toBe('rgb(37, 99, 235)');
       await cli(['cdp', 'Input.dispatchMouseEvent', JSON.stringify({ type: 'mouseReleased', x: 150, y: 130, button: 'left', buttons: 0, clickCount: 1 }), '-t', id]);
       await expect(cursor).toHaveAttribute('data-pressed', 'false');
+      expect(await cursor.evaluate(el => getComputedStyle(el).color)).toBe('rgb(17, 24, 39)');
       await page.goto('about:blank');
       await expect(page.locator('#browser-bridge-cursor')).toHaveCount(0);
     } finally {
@@ -262,7 +265,7 @@ test.describe('Tab groups and visible cursor', () => {
       expect(shot.code, shot.stderr).toBe(0);
       const png = PNG.sync.read(fs.readFileSync(file));
       const at = (200 + 12) * png.width * 4 + (300 + 4) * 4;
-      expect(Array.from(png.data.subarray(at, at + 3))).toEqual([14, 165, 233]);
+      expect(Array.from(png.data.subarray(at, at + 3))).toEqual([17, 24, 39]);
       await json(['click', '#modal-button', '-t', id]);
       expect(await page.evaluate(() => (window as any).clicked)).toBe(true);
     } finally {
