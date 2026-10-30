@@ -902,9 +902,11 @@ async function dispatchAction(action, params) {
       const frame = lease.frame;
       if (!frame || (frame.sequence === params.since && !params.keyFrame)) return { frame: null };
       try {
-        const video = await videoMessage({ operation: 'encode', id: lease.id, data: frame.data, keyFrame: !!params.keyFrame });
+        const video = await videoMessage({ operation: 'encode', id: lease.id, data: frame.data,
+          keyFrame: !!params.keyFrame || lease.encodedWidth !== frame.metadata.deviceWidth });
         if (!video || video.error) throw new Error(video?.error || 'Encoder unavailable');
         if (video.unchanged) return { frame: null };
+        lease.encodedWidth = frame.metadata.deviceWidth;
         return { frame: { sequence: frame.sequence, metadata: frame.metadata, video } };
       } catch (error) {
         await videoMessage({ operation: 'close', id: lease.id }).catch(() => {});
