@@ -323,6 +323,48 @@ test.describe('Extension via Playwright', () => {
     }
   });
 
+  test('scrolling popup switches behind the header cannot intercept header clicks', async () => {
+    const popup = await getExtensionPopup(context);
+    try {
+      await popup.setViewportSize({ width: 380, height: 600 });
+      await expect(popup.locator('#pairUI')).toBeVisible();
+      await popup.locator('#shutdownSettings summary').click();
+      for (const colorScheme of ['light', 'dark'] as const) {
+        await popup.emulateMedia({ colorScheme });
+        await popup.evaluate(() => {
+          const toggle = document.querySelector('#enabledToggle')!;
+          window.scrollTo(0, toggle.getBoundingClientRect().top + scrollY - 25);
+        });
+        const point = await popup.locator('#enabledToggle').boundingBox();
+        expect(point).not.toBeNull();
+        const x = point!.x + point!.width / 2;
+        const y = point!.y + point!.height / 2;
+        expect(await popup.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('header'), { x, y })).toBe(true);
+        await popup.mouse.click(x, y);
+        await expect(popup.locator('#enabledToggle')).not.toBeChecked();
+        await expect.poll(() => popup.evaluate(async () => {
+          const chrome = (globalThis as any).chrome;
+          return (await chrome.runtime.sendMessage({ type: 'getStatus' })).enabled;
+        })).toBe(false);
+      }
+      await popup.evaluate(() => window.scrollTo(0, 0));
+      await popup.locator('#cursorToggle').focus();
+      await popup.keyboard.press('Space');
+      await expect(popup.locator('#cursorToggle')).not.toBeChecked();
+      await expect(popup.locator('#cursorToggle')).toBeEnabled();
+      await popup.locator('#cursorToggle').click();
+      await expect(popup.locator('#cursorToggle')).toBeChecked();
+    } finally {
+      await popup.evaluate(async () => {
+        const chrome = (globalThis as any).chrome;
+        await chrome.storage.local.set({ enabled: false, showOperationCursor: true });
+        await chrome.runtime.sendMessage({ type: 'disable' });
+        await chrome.runtime.sendMessage({ type: 'settingsUpdated' });
+      });
+      await popup.close();
+    }
+  });
+
   test('popup uses local fonts and applies settings immediately', async () => {
     const popup = await getExtensionPopup(context);
     try {
